@@ -7,7 +7,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 
 import ECS.Entity (entityIndex, entityVersion)
-import ECS.World (World, Entity, emptyWorld, despawnEntityPurePurePure, hasEntity, spawnEntityPurePure, unEntity)
+import ECS.World (World, Entity, emptyWorld, despawnEntityPure, hasEntity, spawnEntityPure, unEntity)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -35,31 +35,31 @@ worldSpec = do
     describe "Entity Spawn" do
 
       it "spawnEntityPure creates valid entity" do
-        let result = spawnEntityPurePure emptyWorld
+        let result = spawnEntityPure emptyWorld
         hasEntity result.entity result.world `shouldEqual` true
 
       it "first entity has index 0, version 0" do
-        let result = spawnEntityPurePure emptyWorld
+        let result = spawnEntityPure emptyWorld
             entityId = unEntity result.entity
         entityIndex entityId `shouldEqual` 0
         entityVersion entityId `shouldEqual` 0
 
       it "spawn multiple entities increments indices" do
-        let r1 = spawnEntityPurePure emptyWorld
-            r2 = spawnEntityPurePure r1.world
-            r3 = spawnEntityPurePure r2.world
+        let r1 = spawnEntityPure emptyWorld
+            r2 = spawnEntityPure r1.world
+            r3 = spawnEntityPure r2.world
             ids = map (entityIndex <<< unEntity) [r1.entity, r2.entity, r3.entity]
         ids `shouldEqual` [0, 1, 2]
 
       it "spawned entity stored in empty archetype" do
-        let result = spawnEntityPurePure emptyWorld
+        let result = spawnEntityPure emptyWorld
             entityId = unEntity result.entity
             maybeArchId = Map.lookup (entityIndex entityId) result.world.entityLocations
         maybeArchId `shouldEqual` Just ""
 
       it "entityLocations updated correctly" do
-        let r1 = spawnEntityPurePure emptyWorld
-            r2 = spawnEntityPurePure r1.world
+        let r1 = spawnEntityPure emptyWorld
+            r2 = spawnEntityPure r1.world
             idx1 = entityIndex (unEntity r1.entity)
             idx2 = entityIndex (unEntity r2.entity)
             loc1 = Map.lookup idx1 r2.world.entityLocations
@@ -71,13 +71,13 @@ worldSpec = do
     describe "Entity Despawn" do
 
       it "despawn removes entity from world" do
-        let r = spawnEntityPurePure emptyWorld
-            world2 = despawnEntityPurePurePure r.entity r.world
+        let r = spawnEntityPure emptyWorld
+            world2 = despawnEntityPure r.entity r.world
         hasEntity r.entity world2 `shouldEqual` false
 
       it "despawn updates EntityManager (version increments)" do
-        let r = spawnEntityPurePure emptyWorld
-            world2 = despawnEntityPurePurePure r.entity r.world
+        let r = spawnEntityPure emptyWorld
+            world2 = despawnEntityPure r.entity r.world
             -- Create new entity, should reuse index with incremented version
             r2 = spawnEntityPure world2
             id1 = unEntity r.entity
@@ -87,19 +87,19 @@ worldSpec = do
 
       it "despawned entity fails hasEntity check" do
         let r = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r.entity r.world
+            world2 = despawnEntityPure r.entity r.world
         hasEntity r.entity world2 `shouldEqual` false
 
       it "despawn removes from entityLocations" do
         let r = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r.entity r.world
+            world2 = despawnEntityPure r.entity r.world
             idx = entityIndex (unEntity r.entity)
         Map.lookup idx world2.entityLocations `shouldEqual` Nothing
 
       it "despawn from archetype succeeds" do
         let r1 = spawnEntityPure emptyWorld
             r2 = spawnEntityPure r1.world
-            world3 = despawnEntityPurePure r1.entity r2.world
+            world3 = despawnEntityPure r1.entity r2.world
         -- r2 should still exist, r1 should not
         hasEntity r1.entity world3 `shouldEqual` false
         hasEntity r2.entity world3 `shouldEqual` true
@@ -113,12 +113,12 @@ worldSpec = do
 
       it "hasEntity returns false for despawned entity" do
         let r = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r.entity r.world
+            world2 = despawnEntityPure r.entity r.world
         hasEntity r.entity world2 `shouldEqual` false
 
       it "hasEntity validates version correctly" do
         let r1 = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r1.entity r1.world
+            world2 = despawnEntityPure r1.entity r1.world
             r2 = spawnEntityPure world2  -- Reuses index with new version
         -- Old entity reference should be invalid
         hasEntity r1.entity r2.world `shouldEqual` false
@@ -162,12 +162,12 @@ worldSpec = do
 
       it "spawn then despawn leaves clean state" do
         let r = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r.entity r.world
+            world2 = despawnEntityPure r.entity r.world
         Map.isEmpty world2.entityLocations `shouldEqual` true
 
       it "spawn, despawn, spawn reuses index" do
         let r1 = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r1.entity r1.world
+            world2 = despawnEntityPure r1.entity r1.world
             r2 = spawnEntityPure world2
             idx1 = entityIndex (unEntity r1.entity)
             idx2 = entityIndex (unEntity r2.entity)
@@ -175,9 +175,9 @@ worldSpec = do
 
       it "multiple spawn/despawn cycles work" do
         let r1 = spawnEntityPure emptyWorld
-            w2 = despawnEntityPurePure r1.entity r1.world
+            w2 = despawnEntityPure r1.entity r1.world
             r2 = spawnEntityPure w2
-            w3 = despawnEntityPurePure r2.entity r2.world
+            w3 = despawnEntityPure r2.entity r2.world
             r3 = spawnEntityPure w3
             idx = entityIndex (unEntity r3.entity)
         idx `shouldEqual` 0  -- Should reuse index 0
@@ -199,15 +199,15 @@ worldSpec = do
 
       it "despawn non-existent entity does nothing" do
         let r = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r.entity r.world
+            world2 = despawnEntityPure r.entity r.world
             -- Despawn again (already gone)
-            world3 = despawnEntityPurePure r.entity world2
+            world3 = despawnEntityPure r.entity world2
         Map.isEmpty world3.entityLocations `shouldEqual` true
 
       it "despawn already-despawned entity is idempotent" do
         let r = spawnEntityPure emptyWorld
-            world2 = despawnEntityPurePure r.entity r.world
-            world3 = despawnEntityPurePure r.entity world2
+            world2 = despawnEntityPure r.entity r.world
+            world3 = despawnEntityPure r.entity world2
         -- Should not crash, state should be same
         hasEntity r.entity world2 `shouldEqual` false
         hasEntity r.entity world3 `shouldEqual` false
@@ -223,7 +223,7 @@ worldSpec = do
       it "empty world operations don't crash" do
         let world = emptyWorld
             r = spawnEntityPure world
-            world2 = despawnEntityPurePure r.entity r.world
+            world2 = despawnEntityPure r.entity r.world
         Map.isEmpty world2.entityLocations `shouldEqual` true
 
 -- Helper to check if all elements satisfy predicate

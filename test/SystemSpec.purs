@@ -7,7 +7,7 @@ import Data.Array (length, filter, foldl)
 import Data.Maybe (Maybe(..))
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponentPure, getComponentPurePure)
+import ECS.Component (addComponentPure, getComponentPure)
 
 import ECS.Query (query, runQuery)
 import ECS.System (System, runSystem, updateComponent)

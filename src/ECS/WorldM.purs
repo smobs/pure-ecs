@@ -127,4 +127,4 @@ putWorld = put
 -- |   modifyWorld \w -> -- some transformation
 -- | ```
 modifyWorld :: (World -> World) -> WorldM Unit
-modifyWorld = modify
+modifyWorld f = modify f
