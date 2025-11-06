@@ -1,0 +1,25 @@
+workspace:
+  packageSet:
+    registry: 56.4.0
+
+package:
+  name: pure-ecs
+  dependencies:
+    - arrays
+    - console
+    - effect
+    - either
+    - foreign
+    - foreign-object
+    - lists
+    - maybe
+    - ordered-collections
+    - prelude
+    - record
+    - transformers
+    - tuples
+    - typelevel-prelude
+  test:
+    main: Test.Main
+    dependencies:
+      - spec

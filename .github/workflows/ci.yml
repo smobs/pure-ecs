@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            .spago
+            output
+          key: ${{ runner.os }}-spago-${{ hashFiles('spago.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-spago-
+
+      - name: Install PureScript toolchain
+        run: |
+          npm install -g purescript@latest spago@latest
+
+      - name: Install dependencies
+        run: spago install
+
+      - name: Build project
+        run: spago build
+
+      - name: Run tests
+        run: spago test
+
+      - name: Generate documentation
+        run: spago docs

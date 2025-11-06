@@ -1,0 +1,22 @@
+{
+  "name": "pure-ecs",
+  "version": "0.1.0",
+  "description": "A pure functional Entity Component System for PureScript",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/toby/pure-ecs.git"
+  },
+  "scripts": {
+    "build": "spago build",
+    "test": "spago test",
+    "clean": "rm -rf output .spago"
+  },
+  "keywords": [
+    "purescript",
+    "ecs",
+    "entity-component-system",
+    "functional",
+    "game-development"
+  ]
+}
