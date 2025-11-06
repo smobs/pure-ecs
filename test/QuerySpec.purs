@@ -4,9 +4,9 @@ import Prelude
 
 import Data.Array (length, index)
 import Data.Maybe (Maybe(..))
-import ECS.Component (addComponent)
+import ECS.Component (addComponentPure)
 import ECS.Query (query, without, runQuery, forQuery, mapQuery)
-import ECS.World (World, emptyWorld, spawnEntity)
+import ECS.World (World, emptyWorld, spawnEntityPure)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Type.Proxy (Proxy(..))
@@ -39,8 +39,8 @@ querySpec = do
 
       it "query single component returns matching entities" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 20.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
 
             q :: _ (position :: Position) ()
             q = query (Proxy :: _ (position :: Position))
@@ -53,9 +53,9 @@ querySpec = do
 
       it "query multiple components (AND logic)" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: e2} = addComponent _position {x: 10.0, y: 20.0} e1 w1
-            {world: w3, entity: _} = addComponent _velocity {x: 1.0, y: 0.0} e2 w2
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: e2} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
+            {world: w3, entity: _} = addComponentPure _velocity {x: 1.0, y: 0.0} e2 w2
 
             q :: _ (position :: Position, velocity :: Velocity) ()
             q = query (Proxy :: _ (position :: Position, velocity :: Velocity))
@@ -79,12 +79,12 @@ querySpec = do
       it "query only returns entities with ALL required components" do
         let world0 = emptyWorld
             -- Entity with position only
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 20.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
             -- Entity with both position and velocity
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: e4} = addComponent _position {x: 30.0, y: 40.0} e3 w3
-            {world: w5, entity: _} = addComponent _velocity {x: 1.0, y: 0.0} e4 w4
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: e4} = addComponentPure _position {x: 30.0, y: 40.0} e3 w3
+            {world: w5, entity: _} = addComponentPure _velocity {x: 1.0, y: 0.0} e4 w4
 
             q :: _ (position :: Position, velocity :: Velocity) ()
             q = query (Proxy :: _ (position :: Position, velocity :: Velocity))
@@ -102,12 +102,12 @@ querySpec = do
       it "without filter excludes entities with specified component" do
         let world0 = emptyWorld
             -- Entity with position (not frozen)
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 20.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
             -- Entity with position and frozen
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: e4} = addComponent _position {x: 30.0, y: 40.0} e3 w3
-            {world: w5, entity: _} = addComponent _frozen unit e4 w4
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: e4} = addComponentPure _position {x: 30.0, y: 40.0} e3 w3
+            {world: w5, entity: _} = addComponentPure _frozen unit e4 w4
 
             q :: _ (position :: Position) (frozen :: Unit)
             q = query (Proxy :: _ (position :: Position)) # without _frozen
@@ -122,16 +122,16 @@ querySpec = do
       it "multiple without filters work correctly" do
         let world0 = emptyWorld
             -- Entity with position only
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 20.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
             -- Entity with position and frozen
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: e4} = addComponent _position {x: 20.0, y: 30.0} e3 w3
-            {world: w5, entity: _} = addComponent _frozen unit e4 w4
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: e4} = addComponentPure _position {x: 20.0, y: 30.0} e3 w3
+            {world: w5, entity: _} = addComponentPure _frozen unit e4 w4
             -- Entity with position and health
-            {world: w6, entity: e6} = spawnEntity w5
-            {world: w7, entity: e7} = addComponent _position {x: 30.0, y: 40.0} e6 w6
-            {world: w8, entity: _} = addComponent _health {current: 100, max: 100} e7 w7
+            {world: w6, entity: e6} = spawnEntityPure w5
+            {world: w7, entity: e7} = addComponentPure _position {x: 30.0, y: 40.0} e6 w6
+            {world: w8, entity: _} = addComponentPure _health {current: 100, max: 100} e7 w7
 
             q :: _ (position :: Position) (frozen :: Unit, health :: Health)
             q = query (Proxy :: _ (position :: Position))
@@ -150,10 +150,10 @@ querySpec = do
 
       it "extra components don't prevent match" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: e2} = addComponent _position {x: 10.0, y: 20.0} e1 w1
-            {world: w3, entity: e3} = addComponent _velocity {x: 1.0, y: 0.0} e2 w2
-            {world: w4, entity: _} = addComponent _health {current: 100, max: 100} e3 w3
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: e2} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
+            {world: w3, entity: e3} = addComponentPure _velocity {x: 1.0, y: 0.0} e2 w2
+            {world: w4, entity: _} = addComponentPure _health {current: 100, max: 100} e3 w3
 
             -- Query for just position - should match even with extra components
             q :: _ (position :: Position) ()
@@ -164,8 +164,8 @@ querySpec = do
 
       it "missing required component prevents match" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 20.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
 
             -- Query for position and velocity - should not match (missing velocity)
             q :: _ (position :: Position, velocity :: Velocity) ()
@@ -176,9 +176,9 @@ querySpec = do
 
       it "excluded component prevents match" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: e2} = addComponent _position {x: 10.0, y: 20.0} e1 w1
-            {world: w3, entity: _} = addComponent _frozen unit e2 w2
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: e2} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
+            {world: w3, entity: _} = addComponentPure _frozen unit e2 w2
 
             q :: _ (position :: Position) (frozen :: Unit)
             q = query (Proxy :: _ (position :: Position)) # without _frozen
@@ -192,12 +192,12 @@ querySpec = do
       it "query returns all matching entities" do
         let world0 = emptyWorld
             -- Create 3 entities with position
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 10.0} e1 w1
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: _} = addComponent _position {x: 20.0, y: 20.0} e3 w3
-            {world: w5, entity: e5} = spawnEntity w4
-            {world: w6, entity: _} = addComponent _position {x: 30.0, y: 30.0} e5 w5
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 10.0} e1 w1
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: _} = addComponentPure _position {x: 20.0, y: 20.0} e3 w3
+            {world: w5, entity: e5} = spawnEntityPure w4
+            {world: w6, entity: _} = addComponentPure _position {x: 30.0, y: 30.0} e5 w5
 
             q :: _ (position :: Position) ()
             q = query (Proxy :: _ (position :: Position))
@@ -208,12 +208,12 @@ querySpec = do
       it "results from different archetypes" do
         let world0 = emptyWorld
             -- Entity with just position
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 10.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 10.0} e1 w1
             -- Entity with position and velocity
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: e4} = addComponent _position {x: 20.0, y: 20.0} e3 w3
-            {world: w5, entity: _} = addComponent _velocity {x: 1.0, y: 0.0} e4 w4
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: e4} = addComponentPure _position {x: 20.0, y: 20.0} e3 w3
+            {world: w5, entity: _} = addComponentPure _velocity {x: 1.0, y: 0.0} e4 w4
 
             q :: _ (position :: Position) ()
             q = query (Proxy :: _ (position :: Position))
@@ -224,10 +224,10 @@ querySpec = do
 
       it "component values unique per entity" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 100.0, y: 200.0} e1 w1
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: _} = addComponent _position {x: 300.0, y: 400.0} e3 w3
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 100.0, y: 200.0} e1 w1
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: _} = addComponentPure _position {x: 300.0, y: 400.0} e3 w3
 
             q :: _ (position :: Position) ()
             q = query (Proxy :: _ (position :: Position))
@@ -245,10 +245,10 @@ querySpec = do
 
       it "forQuery applies callback to all results" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: _} = addComponent _position {x: 10.0, y: 20.0} e1 w1
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: _} = addComponent _position {x: 30.0, y: 40.0} e3 w3
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: _} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: _} = addComponentPure _position {x: 30.0, y: 40.0} e3 w3
 
             q :: _ (position :: Position) ()
             q = query (Proxy :: _ (position :: Position))
@@ -262,9 +262,9 @@ querySpec = do
 
       it "mapQuery threads world through updates" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: e2} = addComponent _position {x: 10.0, y: 20.0} e1 w1
-            {world: w3, entity: _} = addComponent _velocity {x: 5.0, y: 0.0} e2 w2
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: e2} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
+            {world: w3, entity: _} = addComponentPure _velocity {x: 5.0, y: 0.0} e2 w2
 
             q :: _ (position :: Position, velocity :: Velocity) ()
             q = query (Proxy :: _ (position :: Position, velocity :: Velocity))
@@ -276,14 +276,14 @@ querySpec = do
 
         length results `shouldEqual` 1
         -- Note: This test is simplified - full update would require
-        -- removeComponent and addComponent to change component values
+        -- removeComponentPure and addComponentPure to change component values
         true `shouldEqual` true
 
       it "forQuery receives correct types" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: e2} = addComponent _position {x: 10.0, y: 20.0} e1 w1
-            {world: w3, entity: _} = addComponent _velocity {x: 1.0, y: 0.0} e2 w2
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: e2} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
+            {world: w3, entity: _} = addComponentPure _velocity {x: 1.0, y: 0.0} e2 w2
 
             q :: _ (position :: Position, velocity :: Velocity) ()
             q = query (Proxy :: _ (position :: Position, velocity :: Velocity))
@@ -307,7 +307,7 @@ querySpec = do
 
       it "query with no components specified" do
         let world0 = emptyWorld
-            {world: w1, entity: _} = spawnEntity world0
+            {world: w1, entity: _} = spawnEntityPure world0
 
             -- Empty query matches all entities
             q :: _ () ()
@@ -318,8 +318,8 @@ querySpec = do
 
       it "query after component operations" do
         let world0 = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world0
-            {world: w2, entity: e2} = addComponent _position {x: 10.0, y: 20.0} e1 w1
+            {world: w1, entity: e1} = spawnEntityPure world0
+            {world: w2, entity: e2} = addComponentPure _position {x: 10.0, y: 20.0} e1 w1
 
             -- Initially matches
             q :: _ (position :: Position) ()
@@ -329,7 +329,7 @@ querySpec = do
         length results1 `shouldEqual` 1
 
         -- After adding more components, still matches
-        let {world: w3, entity: _} = addComponent _velocity {x: 1.0, y: 0.0} e2 w2
+        let {world: w3, entity: _} = addComponentPure _velocity {x: 1.0, y: 0.0} e2 w2
             results2 = runQuery q w3
 
         length results2 `shouldEqual` 1

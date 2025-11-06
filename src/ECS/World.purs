@@ -20,11 +20,14 @@ module ECS.World
   , hasEntity
   , unEntity
   , wrapEntity
+  -- Pure versions (for internal use)
+  , spawnEntityPure
+  , despawnEntityPure
   ) where
 
 import Prelude
 
-import Control.Monad.State (runState)
+import Control.Monad.State (State, runState, state)
 import Data.Array (findIndex, index, length, take, updateAt)
 import Data.Map (Map)
 import Data.Map as Map
@@ -96,7 +99,24 @@ emptyWorld =
   , entityLocations: Map.empty
   }
 
--- | Spawn a new entity (empty, no components yet).
+-- | Spawn a new entity (monadic version).
+-- |
+-- | This is the main API. It works within the State monad over World,
+-- | automatically managing world state threading.
+-- |
+-- | Example:
+-- | ```purescript
+-- | do
+-- |   e <- spawnEntity
+-- |   e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
+-- |   pure e'
+-- | ```
+spawnEntity :: State World (Entity ())
+spawnEntity = state \world ->
+  let result = spawnEntityPure world
+  in Tuple result.entity result.world
+
+-- | Spawn a new entity (pure version for internal use).
 -- |
 -- | Algorithm:
 -- | 1. Generate EntityId via EntityManager
@@ -106,8 +126,8 @@ emptyWorld =
 -- | 5. Return Entity () with empty row type
 -- |
 -- | Returns both updated World and the new Entity handle.
-spawnEntity :: World -> { world :: World, entity :: Entity () }
-spawnEntity world =
+spawnEntityPure :: World -> { world :: World, entity :: Entity () }
+spawnEntityPure world =
   let
     -- Step 1: Create EntityId (see CLAUDE.md State monad pattern)
     (Tuple entityId state) = runState createEntity world.entities
@@ -131,7 +151,21 @@ spawnEntity world =
   in
     { world: newWorld, entity: Entity entityId }
 
--- | Despawn an entity (remove from world).
+-- | Despawn an entity (monadic version).
+-- |
+-- | This is the main API. It works within the State monad over World.
+-- |
+-- | Example:
+-- | ```purescript
+-- | do
+-- |   e <- spawnEntity
+-- |   despawnEntity e  -- Remove it
+-- | ```
+despawnEntity :: forall r. Entity r -> State World Unit
+despawnEntity entity = state \world ->
+  Tuple unit (despawnEntityPure entity world)
+
+-- | Despawn an entity (pure version for internal use).
 -- |
 -- | Algorithm:
 -- | 1. Unwrap Entity to get EntityId
@@ -141,8 +175,8 @@ spawnEntity world =
 -- | 5. Delete from entityLocations
 -- | 6. Delete EntityId via EntityManager
 -- | 7. Return updated World
-despawnEntity :: forall r. Entity r -> World -> World
-despawnEntity (Entity entityId) world =
+despawnEntityPure :: forall r. Entity r -> World -> World
+despawnEntityPure (Entity entityId) world =
   -- Validate entity exists
   if not (validateEntity entityId world.entities) then
     world  -- Entity doesn't exist, return unchanged
