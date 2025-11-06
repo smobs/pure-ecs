@@ -7,18 +7,18 @@ module Test.ECS.IntegrationSpec (integrationSpec) where
 
 import Prelude
 
-import Data.Array (length, range, foldl, filter)
+import Control.Monad.State (state)
+import Data.Array (foldl, length, range)
 import Data.Int (toNumber)
-import Data.Maybe (Maybe(..), isJust)
-import ECS.Component (addComponent, getComponent, removeComponent)
+import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..))
+import ECS.Component (addComponent, getComponent, hasComponent, removeComponent)
 import ECS.Entity (entityIndex)
 import ECS.Query (query, runQuery, without)
-import Control.Monad.State (state)
-import Data.Tuple (Tuple(..))
 import ECS.System (System, runSystem, updateComponent)
-import ECS.World (World, emptyWorld, spawnEntity, despawnEntity, unEntity)
+import ECS.World (emptyWorld, spawnEntity, despawnEntity, unEntity)
 import Test.Spec (Spec, describe, it)
-import Test.Spec.Assertions (shouldEqual, shouldSatisfy)
+import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
 -- Test component types
@@ -80,7 +80,7 @@ integrationSpec = do
             -- Add components to all
             {world: w4, entity: e1'} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 w3
             {world: w5, entity: e2'} = addComponent (Proxy :: _ "position") { x: 2.0, y: 2.0 } e2 w4
-            {world: w6, entity: e3'} = addComponent (Proxy :: _ "position") { x: 3.0, y: 3.0 } e3 w5
+            {world: w6, entity: _} = addComponent (Proxy :: _ "position") { x: 3.0, y: 3.0 } e3 w5
 
             -- Add velocity to 2 of them
             {world: w7, entity: _} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e1' w6
@@ -167,10 +167,10 @@ integrationSpec = do
 
             {world: w5, result: count1} = runSystem countSys w4
             {world: w6, result: _} = runSystem healSys w5
-            {world: _, result: count2} = runSystem countSys w6
+            {world: w7, result: count2} = runSystem countSys w6
 
             -- Check healed values
-            h1 = getComponent (Proxy :: _ "health") e1' w6
+            h1 = getComponent (Proxy :: _ "health") e1' w7
 
         count1 `shouldEqual` 2
         count2 `shouldEqual` 2
@@ -252,7 +252,7 @@ integrationSpec = do
 
             -- Spawn new entity (should recycle)
             {world: w5, entity: e3} = spawnEntity w4
-            {world: w6, entity: e3'} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } e3 w5
+            {world: w6, entity: _} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } e3 w5
 
             -- Query should find it
             q = query (Proxy :: _ (position :: Position))
@@ -268,7 +268,7 @@ integrationSpec = do
             {world: w1, entity: e1} = spawnEntity world
             {world: w2, entity: e1'} = addComponent (Proxy :: _ "position")
               { x: 100.0, y: 200.0 } e1 w1
-            {world: w3, entity: e1''} = addComponent (Proxy :: _ "velocity")
+            {world: w3, entity: _} = addComponent (Proxy :: _ "velocity")
               { x: 5.0, y: 10.0 } e1' w2
 
             -- Step 2: Despawn the entity (index goes to free list)
@@ -296,7 +296,7 @@ integrationSpec = do
 
             -- Simpler test: just position component
             {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e1'} = addComponent (Proxy :: _ "position")
+            {world: w2, entity: _} = addComponent (Proxy :: _ "position")
               { x: 100.0, y: 200.0 } e1 w1
 
             -- Despawn

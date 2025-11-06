@@ -24,7 +24,7 @@ module ECS.World
 
 import Prelude
 
-import Control.Monad.State (State, runState)
+import Control.Monad.State (runState)
 import Data.Array (findIndex, index, length, take, updateAt)
 import Data.Map (Map)
 import Data.Map as Map
@@ -33,7 +33,6 @@ import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, EntityManager, createEntity, deleteEntity, emptyEntityManager, entityIndex, validateEntity)
 import ECS.Internal.ComponentStorage (ComponentStorage)
 import ECS.Internal.ComponentStorage as CS
-import Foreign (Foreign)
 
 -- | Archetype ID derived from sorted component type names.
 -- |

@@ -17,10 +17,7 @@ module ECS.System
   , updateComponent
   ) where
 
-import Prelude
-
 import Control.Monad.State (State, state, runState)
-import Data.Array (foldl, filter) as Array
 import Data.Tuple (Tuple(..))
 import ECS.Component (addComponent, removeComponent)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)

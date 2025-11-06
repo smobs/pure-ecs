@@ -23,15 +23,13 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), joinWith, split)
 import Data.String.Common (trim)
-import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
 import ECS.World (World, Entity, ArchetypeId, unEntity, wrapEntity)
 import ECS.Internal.ComponentStorage (ComponentStorage)
 import ECS.Internal.ComponentStorage as CS
 import Foreign (Foreign)
 import Prim.Row (class Cons, class Lacks)
-import Record as Record
-import Type.Proxy (Proxy(..))
+import Type.Proxy (Proxy)
 import Type.Data.Symbol (class IsSymbol, reflectSymbol)
 
 -- | Add a component to an entity with compile-time duplicate prevention.
@@ -337,16 +335,6 @@ removeFromArchetype entityId archId world =
             in
               world { archetypes = updatedArchetypes }
 
--- | Extract a single component value at a specific index from archetype storage.
--- |
--- | Given an entity's index in the archetype and a component label,
--- | returns the component value at that index.
-extractComponentValueAtIndex :: Int -> String -> ComponentStorage -> Maybe Foreign
-extractComponentValueAtIndex idx label storage =
-  case CS.lookup label storage of
-    Nothing -> Nothing  -- Component label doesn't exist
-    Just arr -> CS.arrayIndex idx arr
-
 -- | Extract all component values for an entity at a specific index.
 -- |
 -- | Returns a ComponentStorage where each label maps to a single component value
@@ -409,21 +397,6 @@ addToArchetypeWithComponent entityId archId existingComponents newLabel newCompo
 
     -- Add entity
     updatedArch = { entities: arch.entities <> [entityId], storage: updatedStorage }
-    updatedArchetypes = Map.insert archId updatedArch world.archetypes
-  in
-    world { archetypes = updatedArchetypes }
-
--- | Add entity to archetype (without components, for empty archetype).
-addToArchetype :: EntityId -> ArchetypeId -> World -> World
-addToArchetype entityId archId world =
-  let
-    -- Get or create archetype
-    arch = case Map.lookup archId world.archetypes of
-      Just a -> a
-      Nothing -> { entities: [], storage: CS.empty }
-
-    -- Add entity
-    updatedArch = arch { entities = arch.entities <> [entityId] }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
   in
     world { archetypes = updatedArchetypes }

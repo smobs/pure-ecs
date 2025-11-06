@@ -25,10 +25,8 @@ import Prelude
 
 import Control.Monad.State (state)
 import Data.Array (foldl, filter)
-import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponent, getComponent)
-import ECS.Entity (entityIndex)
+import ECS.Component (addComponent)
 import ECS.Query (query, runQuery)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
@@ -237,7 +235,7 @@ runExample = do
   log "Running simulation for 5 ticks..."
   log ""
 
-  finalWorld <- runSimulation 5 1.0 world
+  _ <- runSimulation 5 1.0 world
 
   log ""
   log "Simulation complete!"

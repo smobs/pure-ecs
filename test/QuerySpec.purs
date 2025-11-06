@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Array (length, index)
 import Data.Maybe (Maybe(..))
-import ECS.Component (addComponent, getComponent)
+import ECS.Component (addComponent)
 import ECS.Query (query, without, runQuery, forQuery, mapQuery)
 import ECS.World (World, emptyWorld, spawnEntity)
 import Test.Spec (Spec, describe, it)
@@ -340,5 +340,5 @@ infixl 8 arrayIndex as !!
 arrayIndex :: forall a. Array a -> Int -> Maybe a
 arrayIndex = index
 
-updatePos :: forall r. { entity :: _ , components :: Record (position :: Position, velocity :: Velocity | r) } -> World -> World
+updatePos :: forall r e. { entity :: e , components :: Record (position :: Position, velocity :: Velocity | r) } -> World -> World
 updatePos _ w = w  -- Simplified - would update position based on velocity

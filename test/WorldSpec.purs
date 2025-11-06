@@ -5,7 +5,7 @@ import Prelude
 import Data.Foldable (foldr)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Traversable (sequence)
+
 import ECS.Entity (entityIndex, entityVersion)
 import ECS.World (World, Entity, emptyWorld, despawnEntity, hasEntity, spawnEntity, unEntity)
 import Test.Spec (Spec, describe, it)

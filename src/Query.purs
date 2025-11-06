@@ -25,7 +25,7 @@ module ECS.Query
 
 import Prelude
 
-import Data.Array (filter, foldl, index, uncons)
+import Data.Array (filter, foldl, uncons)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
@@ -36,7 +36,6 @@ import Data.Tuple.Nested (type (/\), (/\))
 import ECS.Entity (EntityId, entityIndex)
 import ECS.World (World, Entity, ArchetypeId, Archetype, wrapEntity)
 import ECS.Internal.ComponentStorage as CS
-import Foreign (Foreign)
 import Prim.Row (class Cons, class Lacks)
 import Prim.RowList (class RowToList, RowList)
 import Prim.RowList as RL
