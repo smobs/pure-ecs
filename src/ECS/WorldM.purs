@@ -33,7 +33,7 @@ module ECS.WorldM
 
 import Prelude
 
-import Control.Monad.State (State, runState, execState, evalState, get, put, modify)
+import Control.Monad.State (State, runState, execState, evalState, get, put)
 import Data.Tuple (Tuple)
 import ECS.World (World)
 
@@ -127,4 +127,6 @@ putWorld = put
 -- |   modifyWorld \w -> -- some transformation
 -- | ```
 modifyWorld :: (World -> World) -> WorldM Unit
-modifyWorld f = modify f
+modifyWorld f = do
+  world <- get
+  put (f world)
