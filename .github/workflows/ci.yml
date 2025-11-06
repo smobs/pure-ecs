@@ -21,30 +21,26 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: 'npm'
 
-      - name: Cache dependencies
+      - name: Cache Spago dependencies
         uses: actions/cache@v4
         with:
           path: |
-            ~/.npm
             .spago
             output
           key: ${{ runner.os }}-spago-${{ hashFiles('spago.yaml') }}
           restore-keys: |
             ${{ runner.os }}-spago-
 
-      - name: Install PureScript toolchain
-        run: |
-          npm install -g purescript@latest spago@latest
-
       - name: Install dependencies
-        run: spago install
+        run: npm ci
 
       - name: Build project
-        run: spago build
+        run: npm run build
 
       - name: Run tests
-        run: spago test
+        run: npm test
 
       - name: Generate documentation
-        run: spago docs
+        run: npm run docs

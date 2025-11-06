@@ -5,11 +5,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/toby/pure-ecs.git"
+    "url": "https://github.com/smobs/pure-ecs.git"
   },
   "scripts": {
-    "build": "spago build",
-    "test": "spago test",
+    "build": "npx spago build",
+    "test": "npx spago test",
+    "docs": "npx spago docs",
     "clean": "rm -rf output .spago"
   },
   "keywords": [
@@ -18,5 +19,9 @@
     "entity-component-system",
     "functional",
     "game-development"
-  ]
+  ],
+  "devDependencies": {
+    "purescript": "^0.15.15",
+    "spago": "^0.93.44"
+  }
 }
