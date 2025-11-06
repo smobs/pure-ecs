@@ -9,6 +9,7 @@ import Prelude
 
 import Control.Monad.State (State, state, execState)
 import Data.Array (foldl, filter, length)
+import Data.Maybe (Maybe(..))
 import Data.Int (toNumber)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..))
@@ -29,6 +30,7 @@ type Velocity = { x :: Number, y :: Number }
 type Health = { current :: Int, max :: Int }
 type Damage = { amount :: Int }
 type Visual = { color :: String, radius :: Number }
+type DamageFlash = { ticksRemaining :: Int }  -- Visual feedback for damage
 
 -- ============================================================================
 -- Canvas Rendering (Foreign Interface)
@@ -47,6 +49,7 @@ foreign import createRef :: forall a. a -> Effect (Ref a)
 foreign import readRef :: forall a. Ref a -> Effect a
 foreign import writeRef :: forall a. Ref a -> a -> Effect Unit
 foreign import getCanvasContext :: Effect CanvasRenderingContext2D
+foreign import setControlCallbacks :: (Boolean -> Effect Unit) -> Effect Unit -> (Int -> Effect Unit) -> Effect Unit
 
 -- ============================================================================
 -- Systems
@@ -132,20 +135,38 @@ renderWorld ctx world = do
         hp = r.components.health
         healthPct = toNumber hp.current / toNumber hp.max
 
+    -- Add glow effect for low health
+    when (healthPct < 0.3) do
+      drawCircle ctx pos.x pos.y (vis.radius + 8.0) "#ff000033"  -- Red glow
+    when (healthPct < 0.5 && healthPct >= 0.3) do
+      drawCircle ctx pos.x pos.y (vis.radius + 5.0) "#ffaa0033"  -- Orange glow
+
     -- Draw entity circle
     drawCircle ctx pos.x pos.y vis.radius vis.color
 
-    -- Draw health bar background
-    let barWidth = vis.radius * 2.0
-        barHeight = 4.0
-        barX = pos.x - vis.radius
-        barY = pos.y - vis.radius - 10.0
+    -- Draw white outline for damaged entities
+    when (healthPct < 1.0) do
+      drawCircle ctx pos.x pos.y (vis.radius + 2.0) "#ffffff33"
 
-    drawRect ctx barX barY barWidth barHeight "#333333"
+    -- Draw health bar background (larger and more visible)
+    let barWidth = vis.radius * 2.4
+        barHeight = 6.0
+        barX = pos.x - (barWidth / 2.0)
+        barY = pos.y - vis.radius - 14.0
 
-    -- Draw health bar fill
+    -- Black background with white border
+    drawRect ctx (barX - 1.0) (barY - 1.0) (barWidth + 2.0) (barHeight + 2.0) "#ffffff"
+    drawRect ctx barX barY barWidth barHeight "#1a1a2e"
+
+    -- Draw health bar fill with color based on health
     let healthWidth = barWidth * healthPct
-    drawRect ctx barX barY healthWidth barHeight "#2ecc71"
+        healthColor = if healthPct > 0.6
+                      then "#2ecc71"  -- Green
+                      else if healthPct > 0.3
+                      then "#f39c12"  -- Orange
+                      else "#e74c3c"  -- Red
+    when (healthWidth > 0.0) do
+      drawRect ctx barX barY healthWidth barHeight healthColor
 
   pure unit
 
@@ -158,12 +179,12 @@ setupWorld = execState setupEntities emptyWorld
   where
     setupEntities :: State World Unit
     setupEntities = do
-      -- Entity 1: Red ball with damage (will die)
+      -- Entity 1: Red ball with damage (will die slowly)
       e1 <- spawnEntity
       e1' <- addComponent (Proxy :: _ "position") { x: 100.0, y: 100.0 } e1
       e1'' <- addComponent (Proxy :: _ "velocity") { x: 50.0, y: 30.0 } e1'
-      e1''' <- addComponent (Proxy :: _ "health") { current: 50, max: 100 } e1''
-      e1'''' <- addComponent (Proxy :: _ "damage") { amount: 15 } e1'''
+      e1''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e1''
+      e1'''' <- addComponent (Proxy :: _ "damage") { amount: 2 } e1'''
       void $ addComponent (Proxy :: _ "visual") { color: "#e74c3c", radius: 15.0 } e1''''
 
       -- Entity 2: Green ball, no damage (survives)
@@ -173,15 +194,15 @@ setupWorld = execState setupEntities emptyWorld
       e2''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e2''
       void $ addComponent (Proxy :: _ "visual") { color: "#2ecc71", radius: 20.0 } e2'''
 
-      -- Entity 3: Blue ball, stationary with damage
+      -- Entity 3: Blue ball with moderate damage
       e3 <- spawnEntity
       e3' <- addComponent (Proxy :: _ "position") { x: 500.0, y: 150.0 } e3
       e3'' <- addComponent (Proxy :: _ "velocity") { x: -40.0, y: -35.0 } e3'
-      e3''' <- addComponent (Proxy :: _ "health") { current: 30, max: 100 } e3''
-      e3'''' <- addComponent (Proxy :: _ "damage") { amount: 20 } e3'''
+      e3''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e3''
+      e3'''' <- addComponent (Proxy :: _ "damage") { amount: 3 } e3'''
       void $ addComponent (Proxy :: _ "visual") { color: "#3498db", radius: 12.0 } e3''''
 
-      -- Entity 4: Yellow ball, fast
+      -- Entity 4: Yellow ball, fast, no damage
       e4 <- spawnEntity
       e4' <- addComponent (Proxy :: _ "position") { x: 200.0, y: 300.0 } e4
       e4'' <- addComponent (Proxy :: _ "velocity") { x: 60.0, y: -50.0 } e4'
@@ -196,6 +217,8 @@ type GameState =
   { world :: World
   , tickCount :: Int
   , paused :: Boolean
+  , frameCount :: Int
+  , framesPerUpdate :: Int
   }
 
 initialState :: GameState
@@ -203,6 +226,8 @@ initialState =
   { world: setupWorld
   , tickCount: 0
   , paused: false
+  , frameCount: 0
+  , framesPerUpdate: 30  -- Update every 30 frames = 2 updates per second at 60 FPS
   }
 
 gameTick :: Number -> World -> { world :: World, stats :: { moved :: Int, killed :: Int, cleaned :: Int } }
@@ -233,22 +258,54 @@ main = do
   -- Create mutable reference to game state
   stateRef <- createRef initialState
 
+  -- Setup control callbacks
+  let pauseCallback paused = do
+        state <- readRef stateRef
+        writeRef stateRef (state { paused = paused })
+
+      resetCallback = do
+        writeRef stateRef initialState
+
+      setSpeedCallback framesPerUpdate = do
+        state <- readRef stateRef
+        writeRef stateRef (state { framesPerUpdate = framesPerUpdate })
+
+  setControlCallbacks pauseCallback resetCallback setSpeedCallback
+
   let loop timestamp = do
         state <- readRef stateRef
 
         unless state.paused do
-          -- Update game (60 FPS = ~16.67ms per frame, use 1.0 for easier visualization)
-          let {world: newWorld, stats} = gameTick 1.0 state.world
-              newState = state { world = newWorld, tickCount = state.tickCount + 1 }
+          -- Increment frame counter
+          let newFrameCount = state.frameCount + 1
+              shouldUpdate = newFrameCount >= state.framesPerUpdate
 
-          -- Render
+          -- Only update game state every N frames
+          let {world: newWorld, stats, newTick} =
+                if shouldUpdate
+                  then let {world: w, stats: s} = gameTick 1.0 state.world
+                       in {world: w, stats: s, newTick: state.tickCount + 1}
+                  else {world: state.world, stats: {moved: 0, killed: 0, cleaned: 0}, newTick: state.tickCount}
+
+              newState = state
+                { world = newWorld
+                , tickCount = newTick
+                , frameCount = if shouldUpdate then 0 else newFrameCount
+                }
+
+          -- Render every frame for smooth animation
           renderWorld ctx newWorld
 
-          -- Draw stats
-          drawText ctx ("Tick: " <> show newState.tickCount) 10.0 20.0 "#ffffff"
-          drawText ctx ("Entities: " <> show (countEntities newWorld)) 10.0 40.0 "#ffffff"
-          drawText ctx ("Moved: " <> show stats.moved) 10.0 60.0 "#ffffff"
-          drawText ctx ("Cleaned: " <> show stats.cleaned) 10.0 80.0 "#ffffff"
+          -- Draw stats panel with background
+          drawRect ctx 5.0 5.0 200.0 130.0 "#000000aa"
+          drawText ctx ("=== ECS SIMULATION ===") 15.0 25.0 "#ffffff"
+          drawText ctx ("Tick: " <> show newState.tickCount) 15.0 45.0 "#00ff00"
+          drawText ctx ("Entities: " <> show (countEntities newWorld)) 15.0 65.0 "#00ff00"
+          drawText ctx ("") 15.0 85.0 "#ffffff"
+          drawText ctx ("Systems this tick:") 15.0 85.0 "#ffaa00"
+          drawText ctx ("  Physics: " <> show stats.moved <> " updated") 15.0 100.0 "#ffffff"
+          drawText ctx ("  Damage: " <> show stats.killed <> " damaged") 15.0 115.0 "#ffffff"
+          drawText ctx ("  Cleanup: " <> show stats.cleaned <> " removed") 15.0 130.0 "#ffffff"
 
           -- Save state
           writeRef stateRef newState
