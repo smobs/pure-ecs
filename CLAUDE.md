@@ -5,6 +5,7 @@ Pure functional Entity Component System with row-polymorphic type safety.
 ## Quick Start
 
 ```purescript
+import Control.Monad.State (execState)
 import ECS.World (emptyWorld, spawnEntity)
 import ECS.Component (addComponent)
 import ECS.Query (query)
@@ -16,14 +17,18 @@ import Type.Proxy (Proxy(..))
 type Position = { x :: Number, y :: Number }
 type Velocity = { x :: Number, y :: Number }
 
--- Create world and spawn entity
-let world = emptyWorld
-    {world: w1, entity: e} = spawnEntity world
+-- Create world and spawn entity using monadic API (no manual world threading!)
+let world = execState (do
+      -- Spawn entity
+      e <- spawnEntity
 
--- Add components (types automatically tracked!)
-    {world: w2, entity: e'} = addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e w1
-    {world: w3, entity: e''} = addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e' w2
-    -- e'' now has type: Entity (position :: Position, velocity :: Velocity)
+      -- Add components (types automatically tracked!)
+      e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
+      e'' <- addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e'
+      -- e'' now has type: Entity (position :: Position, velocity :: Velocity)
+
+      pure e''
+    ) emptyWorld
 
 -- Create system using State monad
     moveSystem :: System (position :: Position, velocity :: Velocity) (position :: Position) Unit
@@ -34,7 +39,7 @@ let world = emptyWorld
       -- Type-safe access: r.components.position
 
 -- Run system
-    let {world: w4, result: _} = runSystem moveSystem w3
+    let {world: world', result: _} = runSystem moveSystem world
 ```
 
 ## Core Modules
@@ -181,12 +186,17 @@ class ExtractLabels (rl :: RowList Type) where ...
 
 ### Building Entities
 ```purescript
--- Chain addComponent calls
-let {world: w1, entity: e1} = spawnEntity world
-    {world: w2, entity: e2} = addComponent (Proxy :: _ "position") pos e1 w1
-    {world: w3, entity: e3} = addComponent (Proxy :: _ "velocity") vel e2 w2
-    {world: w4, entity: e4} = addComponent (Proxy :: _ "health") hp e3 w3
--- e4 has type: Entity (position :: Position, velocity :: Velocity, health :: Health)
+-- Clean monadic composition (no manual world threading!)
+buildEntity = do
+  e1 <- spawnEntity
+  e2 <- addComponent (Proxy :: _ "position") pos e1
+  e3 <- addComponent (Proxy :: _ "velocity") vel e2
+  e4 <- addComponent (Proxy :: _ "health") hp e3
+  pure e4
+  -- e4 has type: Entity (position :: Position, velocity :: Velocity, health :: Health)
+
+-- Execute within a world
+let world' = execState buildEntity emptyWorld
 ```
 
 ### Writing Systems
@@ -359,18 +369,18 @@ import Data.Traversable (for_)
 type Position = {x :: Number, y :: Number}
 type Velocity = {x :: Number, y :: Number}
 
--- 2. Setup world
-setupWorld = do
-  let w0 = ECS.emptyWorld
-      {world: w1, entity: e} = ECS.spawnEntity w0
-      {world: w2, entity: e'} = addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e w1
-      {world: w3, entity: _} = addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e' w2
-  pure w3
+-- 2. Setup world (monadic API - no manual world threading!)
+setupWorld = execState setupEntities ECS.emptyWorld
+  where
+    setupEntities = do
+      e <- ECS.spawnEntity
+      e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
+      void $ addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e'
 
 -- 3. Create system using State monad
 moveSystem :: Number -> System (position :: Position, velocity :: Velocity) (position :: Position) Unit
 moveSystem dt = do
-  results <- S.query $ query {position: {x:0.0, y:0.0}, velocity: {x:0.0, y:0.0}}
+  results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
@@ -378,16 +388,44 @@ moveSystem dt = do
 
 -- 4. Run game loop
 main = do
-  world <- setupWorld
-  let {world: world', result: _} = runSystem (moveSystem 0.016) world
+  let world = setupWorld
+      {world: world', result: _} = runSystem (moveSystem 0.016) world
   -- All entities moved!
 ```
 
 ---
 
-**Last Updated**: 2025-10-15 (State Monad Migration)
-**Version**: 2.0.0
+**Last Updated**: 2025-11-06 (Monadic World API)
+**Version**: 3.0.0
 **Status**: Production Ready ✅
+
+## Migration from 2.x to 3.0
+
+**Major Improvement**: All World and Component operations now use monadic composition via the State monad, eliminating manual world threading.
+
+### Old API (2.x):
+```purescript
+let {world: w1, entity: e1} = spawnEntity world
+    {world: w2, entity: e2} = addComponent (Proxy :: _ "position") pos e1 w1
+    {world: w3, entity: e3} = addComponent (Proxy :: _ "velocity") vel e2 w2
+```
+
+### New API (3.0):
+```purescript
+let world' = execState (do
+      e1 <- spawnEntity
+      e2 <- addComponent (Proxy :: _ "position") pos e1
+      e3 <- addComponent (Proxy :: _ "velocity") vel e2
+      pure e3
+    ) world
+```
+
+### Migration Steps:
+1. Import `execState` from `Control.Monad.State`
+2. Wrap entity creation code in `execState ... emptyWorld`
+3. Replace `{world: wN, entity: eN} = ...` with `eN <- ...`
+4. Remove manual world threading variables (w1, w2, w3, etc.)
+5. For tests or internal code, pure versions are available: `spawnEntityPure`, `addComponentPure`, etc.
 
 ## Migration from 1.x to 2.0
 

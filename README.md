@@ -10,9 +10,9 @@ A pure functional Entity Component System (ECS) for PureScript.
 
 - **Pure Functional**: Immutable world state, enabling time-travel debugging and easy testing
 - **Type-Safe**: Row polymorphism with `Lacks` and `Cons` constraints prevent bugs at compile-time
+- **Monadic API**: Clean State monad API eliminates manual world threading - no more `{world: w1, entity: e1}` patterns!
 - **High Performance**: Archetype-based storage groups entities by component signature for cache-friendly iteration
 - **Generational Indices**: Prevents use-after-free bugs through entity versioning
-- **Ergonomic**: Clean State monad API with do-notation for system composition
 - **Production Ready**: Comprehensive test coverage (110+ tests)
 
 ## Installation
@@ -37,39 +37,42 @@ spago install
 module Main where
 
 import Prelude
+import Control.Monad.State (State, execState)
+import Data.Traversable (for_)
 import Effect (Effect)
 import Effect.Console (log)
-import ECS.World (emptyWorld, spawnEntity)
+import ECS.World (World, emptyWorld, spawnEntity)
 import ECS.Component (addComponent)
-import ECS.Query (query, runQuery)
-import ECS.System (runSystem)
+import ECS.Query (query)
+import ECS.System (System, runSystem, updateComponent)
+import ECS.System as S
 import Type.Proxy (Proxy(..))
 
 -- Define components
 type Position = { x :: Number, y :: Number }
 type Velocity = { dx :: Number, dy :: Number }
 
--- Create entities
-createEntity :: System _ _ (Entity (position :: Position, velocity :: Velocity))
-createEntity = do
+-- Create entities using monadic API (no manual world threading!)
+setupWorld :: State World Unit
+setupWorld = do
   entity <- spawnEntity
   entity' <- addComponent (Proxy :: _ "position") { x: 0.0, y: 0.0 } entity
-  addComponent (Proxy :: _ "velocity") { dx: 1.0, dy: 0.5 } entity'
+  void $ addComponent (Proxy :: _ "velocity") { dx: 1.0, dy: 0.5 } entity'
 
--- Query and update
+-- Query and update system
 physicsSystem :: System (position :: Position, velocity :: Velocity) (position :: Position) Unit
 physicsSystem = do
-  results <- query (Proxy :: _ (position :: Position, velocity :: Velocity))
-  forQuery results \{ entity, components: { position, velocity } } ->
-    updateComponent (Proxy :: _ "position")
-      { x: position.x + velocity.dx, y: position.y + velocity.dy }
-      entity
+  results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+  for_ results \r -> do
+    let newPos = { x: r.components.position.x + r.components.velocity.dx
+                 , y: r.components.position.y + r.components.velocity.dy }
+    void $ updateComponent (Proxy :: _ "position") newPos r.entity
 
 main :: Effect Unit
 main = do
-  let world = emptyWorld
-  let world' = runSystem createEntity world
-  let world'' = runSystem physicsSystem world'
+  -- Build world with monadic composition
+  let world = execState setupWorld emptyWorld
+      {world: world', result: _} = runSystem physicsSystem world
   log "Simulation complete!"
 ```
 

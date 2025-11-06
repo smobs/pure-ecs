@@ -12,11 +12,11 @@ import Data.Array (foldl, length, range)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponent, getComponent, hasComponent, removeComponent)
+import ECS.Component (addComponentPure, getComponentPure, hasComponent, removeComponentPure)
 import ECS.Entity (entityIndex)
 import ECS.Query (query, runQuery, without)
 import ECS.System (System, runSystem, updateComponent)
-import ECS.World (emptyWorld, spawnEntity, despawnEntity, unEntity)
+import ECS.World (emptyWorld, spawnEntityPure, despawnEntityPure, unEntity)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
@@ -36,12 +36,12 @@ integrationSpec = do
         let world = emptyWorld
 
             -- Spawn entity
-            {world: world1, entity: entity} = spawnEntity world
+            {world: world1, entity: entity} = spawnEntityPure world
 
             -- Add components
-            {world: world2, entity: entity2} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } entity world1
-            {world: world3, entity: entity3} = addComponent (Proxy :: _ "velocity") { x: 0.5, y: 0.5 } entity2 world2
-            {world: world4, entity: entity4} = addComponent (Proxy :: _ "health") { current: 100, max: 100 } entity3 world3
+            {world: world2, entity: entity2} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } entity world1
+            {world: world3, entity: entity3} = addComponentPure (Proxy :: _ "velocity") { x: 0.5, y: 0.5 } entity2 world2
+            {world: world4, entity: entity4} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } entity3 world3
 
             -- Query to verify
             q = query (Proxy :: _ (position :: Position, velocity :: Velocity, health :: Health))
@@ -56,10 +56,10 @@ integrationSpec = do
             {world: world5, result: _} = runSystem updateSys world4
 
             -- Verify update
-            pos = getComponent (Proxy :: _ "position") entity4 world5
+            pos = getComponentPure (Proxy :: _ "position") entity4 world5
 
             -- Despawn
-            world6 = despawnEntity entity world5
+            world6 = despawnEntityPure entity world5
 
             -- Verify despawn
             q2 = query (Proxy :: _ (position :: Position))
@@ -73,18 +73,18 @@ integrationSpec = do
         let world = emptyWorld
 
             -- Spawn 3 entities
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e2} = spawnEntity w1
-            {world: w3, entity: e3} = spawnEntity w2
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: e2} = spawnEntityPure w1
+            {world: w3, entity: e3} = spawnEntityPure w2
 
             -- Add components to all
-            {world: w4, entity: e1'} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 w3
-            {world: w5, entity: e2'} = addComponent (Proxy :: _ "position") { x: 2.0, y: 2.0 } e2 w4
-            {world: w6, entity: _} = addComponent (Proxy :: _ "position") { x: 3.0, y: 3.0 } e3 w5
+            {world: w4, entity: e1'} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 w3
+            {world: w5, entity: e2'} = addComponentPure (Proxy :: _ "position") { x: 2.0, y: 2.0 } e2 w4
+            {world: w6, entity: _} = addComponentPure (Proxy :: _ "position") { x: 3.0, y: 3.0 } e3 w5
 
             -- Add velocity to 2 of them
-            {world: w7, entity: _} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e1' w6
-            {world: w8, entity: _} = addComponent (Proxy :: _ "velocity") { x: 0.0, y: 1.0 } e2' w7
+            {world: w7, entity: _} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e1' w6
+            {world: w8, entity: _} = addComponentPure (Proxy :: _ "velocity") { x: 0.0, y: 1.0 } e2' w7
 
             -- Query moving entities
             qMove = query (Proxy :: _ (position :: Position, velocity :: Velocity))
@@ -95,7 +95,7 @@ integrationSpec = do
             stationary = runQuery qStill w8
 
             -- Despawn one moving entity
-            w9 = despawnEntity e1 w8
+            w9 = despawnEntityPure e1 w8
 
             movingAfter = runQuery qMove w9
 
@@ -106,24 +106,24 @@ integrationSpec = do
     describe "Multi-System Pipelines" do
       it "chains 3 systems with different access patterns" do
         let world = emptyWorld
-            {world: w1, entity: e} = spawnEntity world
+            {world: w1, entity: e} = spawnEntityPure world
 
             -- System 1: Add position
             sys1 :: System () (position :: Position) Unit
             sys1 = state \w ->
-              let {world: w', entity: _} = addComponent (Proxy :: _ "position") { x: 0.0, y: 0.0 } e w
+              let {world: w', entity: _} = addComponentPure (Proxy :: _ "position") { x: 0.0, y: 0.0 } e w
               in Tuple unit w'
 
             -- System 2: Add velocity
             sys2 :: System () (velocity :: Velocity) Unit
             sys2 = state \w ->
-              let {world: w', entity: _} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 1.0 } e w
+              let {world: w', entity: _} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 1.0 } e w
               in Tuple unit w'
 
             -- System 3: Add health
             sys3 :: System () (health :: Health) Unit
             sys3 = state \w ->
-              let {world: w', entity: _} = addComponent (Proxy :: _ "health") { current: 100, max: 100 } e w
+              let {world: w', entity: _} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } e w
               in Tuple unit w'
 
             -- Compose all three with do-notation
@@ -142,10 +142,10 @@ integrationSpec = do
 
       it "runs read and write systems in sequence" do
         let world = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e1'} = addComponent (Proxy :: _ "health") { current: 50, max: 100 } e1 w1
-            {world: w3, entity: e2} = spawnEntity w2
-            {world: w4, entity: _} = addComponent (Proxy :: _ "health") { current: 75, max: 100 } e2 w3
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: e1'} = addComponentPure (Proxy :: _ "health") { current: 50, max: 100 } e1 w1
+            {world: w3, entity: e2} = spawnEntityPure w2
+            {world: w4, entity: _} = addComponentPure (Proxy :: _ "health") { current: 75, max: 100 } e2 w3
 
             -- Read system: count entities
             countSys :: System (health :: Health) () Int
@@ -170,7 +170,7 @@ integrationSpec = do
             {world: w7, result: count2} = runSystem countSys w6
 
             -- Check healed values
-            h1 = getComponent (Proxy :: _ "health") e1' w7
+            h1 = getComponentPure (Proxy :: _ "health") e1' w7
 
         count1 `shouldEqual` 2
         count2 `shouldEqual` 2
@@ -182,8 +182,8 @@ integrationSpec = do
 
             -- Helper to spawn and setup entity
             spawnWithPos i w =
-              let {world: w1, entity: e} = spawnEntity w
-                  {world: w2, entity: _} = addComponent (Proxy :: _ "position") { x: toNumber i, y: 0.0 } e w1
+              let {world: w1, entity: e} = spawnEntityPure w
+                  {world: w2, entity: _} = addComponentPure (Proxy :: _ "position") { x: toNumber i, y: 0.0 } e w1
               in w2
 
             -- Spawn 100 entities
@@ -199,9 +199,9 @@ integrationSpec = do
         let world = emptyWorld
 
             spawnComplex i w =
-              let {world: w1, entity: e} = spawnEntity w
-                  {world: w2, entity: e'} = addComponent (Proxy :: _ "position") { x: toNumber i, y: toNumber i } e w1
-                  {world: w3, entity: _} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 1.0 } e' w2
+              let {world: w1, entity: e} = spawnEntityPure w
+                  {world: w2, entity: e'} = addComponentPure (Proxy :: _ "position") { x: toNumber i, y: toNumber i } e w1
+                  {world: w3, entity: _} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 1.0 } e' w2
               in w3
 
             world' = foldl (\w i -> spawnComplex i w) world (range 0 499)
@@ -217,9 +217,9 @@ integrationSpec = do
             setupN n w =
               if n <= 0 then w
               else
-                let {world: w1, entity: e} = spawnEntity w
-                    {world: w2, entity: e'} = addComponent (Proxy :: _ "health") { current: 100, max: 100 } e w1
-                    {world: w3, entity: _} = addComponent (Proxy :: _ "damage") { amount: 10 } e' w2
+                let {world: w1, entity: e} = spawnEntityPure w
+                    {world: w2, entity: e'} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } e w1
+                    {world: w3, entity: _} = addComponentPure (Proxy :: _ "damage") { amount: 10 } e' w2
                 in setupN (n - 1) w3
 
             world' = setupN 200 world
@@ -245,14 +245,14 @@ integrationSpec = do
         let world = emptyWorld
 
             -- Spawn and despawn to populate free list
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e2} = spawnEntity w1
-            w3 = despawnEntity e1 w2
-            w4 = despawnEntity e2 w3
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: e2} = spawnEntityPure w1
+            w3 = despawnEntityPure e1 w2
+            w4 = despawnEntityPure e2 w3
 
             -- Spawn new entity (should recycle)
-            {world: w5, entity: e3} = spawnEntity w4
-            {world: w6, entity: _} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } e3 w5
+            {world: w5, entity: e3} = spawnEntityPure w4
+            {world: w6, entity: _} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } e3 w5
 
             -- Query should find it
             q = query (Proxy :: _ (position :: Position))
@@ -265,27 +265,27 @@ integrationSpec = do
         let world = emptyWorld
 
             -- Step 1: Create entity with specific component values
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e1'} = addComponent (Proxy :: _ "position")
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: e1'} = addComponentPure (Proxy :: _ "position")
               { x: 100.0, y: 200.0 } e1 w1
-            {world: w3, entity: _} = addComponent (Proxy :: _ "velocity")
+            {world: w3, entity: _} = addComponentPure (Proxy :: _ "velocity")
               { x: 5.0, y: 10.0 } e1' w2
 
             -- Step 2: Despawn the entity (index goes to free list)
-            w4 = despawnEntity e1 w3
+            w4 = despawnEntityPure e1 w3
 
             -- Step 3: Spawn new entity (should recycle e1's index)
-            {world: w5, entity: e2} = spawnEntity w4
+            {world: w5, entity: e2} = spawnEntityPure w4
 
             -- Step 4: Add components with DIFFERENT values to new entity
-            {world: w6, entity: e2'} = addComponent (Proxy :: _ "position")
+            {world: w6, entity: e2'} = addComponentPure (Proxy :: _ "position")
               { x: 1.0, y: 2.0 } e2 w5
-            {world: w7, entity: e2''} = addComponent (Proxy :: _ "velocity")
+            {world: w7, entity: e2''} = addComponentPure (Proxy :: _ "velocity")
               { x: 0.5, y: 0.25 } e2' w6
 
             -- Verify: New entity should have NEW values, not old ones
-            pos = getComponent (Proxy :: _ "position") e2'' w7
-            vel = getComponent (Proxy :: _ "velocity") e2'' w7
+            pos = getComponentPure (Proxy :: _ "position") e2'' w7
+            vel = getComponentPure (Proxy :: _ "velocity") e2'' w7
 
         -- These assertions should pass - new entity must have its own data
         pos `shouldEqual` Just { x: 1.0, y: 2.0 }  -- NOT { x: 100.0, y: 200.0 }!
@@ -295,42 +295,42 @@ integrationSpec = do
         let world = emptyWorld
 
             -- Simpler test: just position component
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: _} = addComponent (Proxy :: _ "position")
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: _} = addComponentPure (Proxy :: _ "position")
               { x: 100.0, y: 200.0 } e1 w1
 
             -- Despawn
-            w3 = despawnEntity e1 w2
+            w3 = despawnEntityPure e1 w2
 
             -- Spawn new entity (recycles index)
-            {world: w4, entity: e2} = spawnEntity w3
-            {world: w5, entity: e2'} = addComponent (Proxy :: _ "position")
+            {world: w4, entity: e2} = spawnEntityPure w3
+            {world: w5, entity: e2'} = addComponentPure (Proxy :: _ "position")
               { x: 1.0, y: 2.0 } e2 w4
 
             -- Verify
-            pos = getComponent (Proxy :: _ "position") e2' w5
+            pos = getComponentPure (Proxy :: _ "position") e2' w5
 
         pos `shouldEqual` Just { x: 1.0, y: 2.0 }  -- NOT { x: 100.0, y: 200.0 }!
 
       it "component migration preserves data across phases" do
         let world = emptyWorld
-            {world: w1, entity: e} = spawnEntity world
+            {world: w1, entity: e} = spawnEntityPure world
 
             -- Phase 1: Add position
-            {world: w2, entity: e2} = addComponent (Proxy :: _ "position") { x: 5.0, y: 10.0 } e w1
+            {world: w2, entity: e2} = addComponentPure (Proxy :: _ "position") { x: 5.0, y: 10.0 } e w1
 
             -- Phase 2: Add velocity (triggers archetype migration)
-            {world: w3, entity: e3} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 2.0 } e2 w2
+            {world: w3, entity: e3} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 2.0 } e2 w2
 
             -- Phase 3: Add health (another migration)
-            {world: w4, entity: e4} = addComponent (Proxy :: _ "health") { current: 50, max: 100 } e3 w3
+            {world: w4, entity: e4} = addComponentPure (Proxy :: _ "health") { current: 50, max: 100 } e3 w3
 
             -- Phase 4: Remove velocity (migration back)
-            {world: w5, entity: e5} = removeComponent (Proxy :: _ "velocity") e4 w4
+            {world: w5, entity: e5} = removeComponentPure (Proxy :: _ "velocity") e4 w4
 
             -- Verify all data preserved and velocity removed
-            pos = getComponent (Proxy :: _ "position") e5 w5
-            health = getComponent (Proxy :: _ "health") e5 w5
+            pos = getComponentPure (Proxy :: _ "position") e5 w5
+            health = getComponentPure (Proxy :: _ "health") e5 w5
             -- Query to verify velocity is gone
             qVel = query (Proxy :: _ (velocity :: Velocity))
             velResults = runQuery qVel w5
@@ -343,23 +343,23 @@ integrationSpec = do
         let world = emptyWorld
 
             -- Setup: 5 entities with various components
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e2} = spawnEntity w1
-            {world: w3, entity: e3} = spawnEntity w2
-            {world: w4, entity: e4} = spawnEntity w3
-            {world: w5, entity: e5} = spawnEntity w4
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: e2} = spawnEntityPure w1
+            {world: w3, entity: e3} = spawnEntityPure w2
+            {world: w4, entity: e4} = spawnEntityPure w3
+            {world: w5, entity: e5} = spawnEntityPure w4
 
-            {world: w6, entity: _} = addComponent (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 w5
-            {world: w7, entity: e2'} = addComponent (Proxy :: _ "position") { x: 2.0, y: 2.0 } e2 w6
-            {world: w8, entity: e2''} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e2' w7
-            {world: w9, entity: _} = addComponent (Proxy :: _ "health") { current: 100, max: 100 } e3 w8
-            {world: w10, entity: e4'} = addComponent (Proxy :: _ "position") { x: 4.0, y: 4.0 } e4 w9
-            {world: w11, entity: _} = addComponent (Proxy :: _ "velocity") { x: 0.0, y: 1.0 } e4' w10
-            {world: w12, entity: _} = addComponent (Proxy :: _ "position") { x: 5.0, y: 5.0 } e5 w11
+            {world: w6, entity: _} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 w5
+            {world: w7, entity: e2'} = addComponentPure (Proxy :: _ "position") { x: 2.0, y: 2.0 } e2 w6
+            {world: w8, entity: e2''} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e2' w7
+            {world: w9, entity: _} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } e3 w8
+            {world: w10, entity: e4'} = addComponentPure (Proxy :: _ "position") { x: 4.0, y: 4.0 } e4 w9
+            {world: w11, entity: _} = addComponentPure (Proxy :: _ "velocity") { x: 0.0, y: 1.0 } e4' w10
+            {world: w12, entity: _} = addComponentPure (Proxy :: _ "position") { x: 5.0, y: 5.0 } e5 w11
 
             -- Modifications: despawn some, modify others
-            w13 = despawnEntity e3 w12
-            {world: w14, entity: _} = removeComponent (Proxy :: _ "velocity") e2'' w13
+            w13 = despawnEntityPure e3 w12
+            {world: w14, entity: _} = removeComponentPure (Proxy :: _ "velocity") e2'' w13
 
             -- Queries after modifications
             qPos = query (Proxy :: _ (position :: Position))
@@ -396,13 +396,13 @@ integrationSpec = do
 
       it "despawning all entities leaves clean state" do
         let world = emptyWorld
-            {world: w1, entity: e1} = spawnEntity world
-            {world: w2, entity: e2} = spawnEntity w1
-            {world: w3, entity: e3} = spawnEntity w2
+            {world: w1, entity: e1} = spawnEntityPure world
+            {world: w2, entity: e2} = spawnEntityPure w1
+            {world: w3, entity: e3} = spawnEntityPure w2
 
-            w4 = despawnEntity e1 w3
-            w5 = despawnEntity e2 w4
-            w6 = despawnEntity e3 w5
+            w4 = despawnEntityPure e1 w3
+            w5 = despawnEntityPure e2 w4
+            w6 = despawnEntityPure e3 w5
 
             q = query (Proxy :: _ (position :: Position))
             results = runQuery q w6

@@ -23,13 +23,13 @@ module ECS.Examples.SimpleExample where
 
 import Prelude
 
-import Control.Monad.State (state)
+import Control.Monad.State (State, state, execState)
 import Data.Array (foldl, filter)
 import Data.Tuple (Tuple(..))
 import ECS.Component (addComponent)
 import ECS.Query (query, runQuery)
 import ECS.System (System, runSystem, updateComponent)
-import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
+import ECS.World (World, emptyWorld, spawnEntity, despawnEntityPure)
 import Effect (Effect)
 import Effect.Console (log)
 import Type.Proxy (Proxy(..))
@@ -129,7 +129,7 @@ cleanupSystem = state \world ->
       deadEntities = filter (\r -> r.components.health.current <= 0) results
 
       -- Despawn each dead entity
-      despawnOne result w = despawnEntity result.entity w
+      despawnOne result w = despawnEntityPure result.entity w
 
       world' = foldl (\w r -> despawnOne r w) world deadEntities
   in Tuple (foldl (\acc _ -> acc + 1) 0 deadEntities) world'
@@ -143,32 +143,30 @@ cleanupSystem = state \world ->
 -- | 2. Moving entity without damage (will survive)
 -- | 3. Stationary entity with health and damage (will die)
 setupWorld :: World
-setupWorld =
-  let -- Start with empty world
-      world = emptyWorld
-
+setupWorld = execState setupEntities emptyWorld
+  where
+    setupEntities :: State World Unit
+    setupEntities = do
       -- Spawn 3 entities
-      {world: world1, entity: e1} = spawnEntity world
-      {world: world2, entity: e2} = spawnEntity world1
-      {world: world3, entity: e3} = spawnEntity world2
+      e1 <- spawnEntity
+      e2 <- spawnEntity
+      e3 <- spawnEntity
 
       -- Entity 1: Moving, with health and damage (position, velocity, health, damage)
-      {world: world4, entity: e1'} = addComponent (Proxy :: _ "position") { x: 0.0, y: 0.0 } e1 world3
-      {world: world5, entity: e1''} = addComponent (Proxy :: _ "velocity") { x: 1.0, y: 0.5 } e1' world4
-      {world: world6, entity: e1'''} = addComponent (Proxy :: _ "health") { current: 50, max: 100 } e1'' world5
-      {world: world7, entity: _} = addComponent (Proxy :: _ "damage") { amount: 15 } e1''' world6
+      e1' <- addComponent (Proxy :: _ "position") { x: 0.0, y: 0.0 } e1
+      e1'' <- addComponent (Proxy :: _ "velocity") { x: 1.0, y: 0.5 } e1'
+      e1''' <- addComponent (Proxy :: _ "health") { current: 50, max: 100 } e1''
+      void $ addComponent (Proxy :: _ "damage") { amount: 15 } e1'''
 
       -- Entity 2: Moving, no damage (position, velocity, health)
-      {world: world8, entity: e2'} = addComponent (Proxy :: _ "position") { x: 10.0, y: 5.0 } e2 world7
-      {world: world9, entity: e2''} = addComponent (Proxy :: _ "velocity") { x: -0.5, y: 1.0 } e2' world8
-      {world: world10, entity: _} = addComponent (Proxy :: _ "health") { current: 100, max: 100 } e2'' world9
+      e2' <- addComponent (Proxy :: _ "position") { x: 10.0, y: 5.0 } e2
+      e2'' <- addComponent (Proxy :: _ "velocity") { x: -0.5, y: 1.0 } e2'
+      void $ addComponent (Proxy :: _ "health") { current: 100, max: 100 } e2''
 
       -- Entity 3: Stationary with damage (position, health, damage)
-      {world: world11, entity: e3'} = addComponent (Proxy :: _ "position") { x: 5.0, y: 5.0 } e3 world10
-      {world: world12, entity: e3''} = addComponent (Proxy :: _ "health") { current: 30, max: 100 } e3' world11
-      {world: world13, entity: _} = addComponent (Proxy :: _ "damage") { amount: 20 } e3'' world12
-
-  in world13
+      e3' <- addComponent (Proxy :: _ "position") { x: 5.0, y: 5.0 } e3
+      e3'' <- addComponent (Proxy :: _ "health") { current: 30, max: 100 } e3'
+      void $ addComponent (Proxy :: _ "damage") { amount: 20 } e3''
 
 -- ============================================================================
 -- Game Loop

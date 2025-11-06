@@ -14,15 +14,21 @@ module ECS.Component
   , removeComponent
   , getComponent
   , hasComponent
+  -- Pure versions (for internal use)
+  , addComponentPure
+  , removeComponentPure
+  , getComponentPure
   ) where
 
 import Prelude
 
+import Control.Monad.State (State, state, get)
 import Data.Array (filter, findIndex, index, length, sort, (:))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), joinWith, split)
 import Data.String.Common (trim)
+import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
 import ECS.World (World, Entity, ArchetypeId, unEntity, wrapEntity)
 import ECS.Internal.ComponentStorage (ComponentStorage)
@@ -32,7 +38,36 @@ import Prim.Row (class Cons, class Lacks)
 import Type.Proxy (Proxy)
 import Type.Data.Symbol (class IsSymbol, reflectSymbol)
 
--- | Add a component to an entity with compile-time duplicate prevention.
+-- | Add a component to an entity (monadic version).
+-- |
+-- | This is the main API. It works within the State monad over World.
+-- |
+-- | Type constraints:
+-- | - IsSymbol label: Label is a compile-time string
+-- | - Lacks label r: Proves component doesn't already exist (prevents duplicates)
+-- | - Cons label a r r': Adding component produces new row type r'
+-- |
+-- | Example:
+-- | ```purescript
+-- | do
+-- |   e <- spawnEntity
+-- |   e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
+-- |   e'' <- addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e'
+-- |   pure e''
+-- | ```
+addComponent :: forall r r' label a.
+  IsSymbol label =>
+  Lacks label r =>
+  Cons label a r r' =>
+  Proxy label ->
+  a ->
+  Entity r ->
+  State World (Entity r')
+addComponent labelProxy componentValue entity = state \world ->
+  let result = addComponentPure labelProxy componentValue entity world
+  in Tuple result.entity result.world
+
+-- | Add a component to an entity (pure version for internal use).
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
@@ -49,7 +84,7 @@ import Type.Data.Symbol (class IsSymbol, reflectSymbol)
 -- | 7. Update entity location tracking
 -- |
 -- | Returns updated World and Entity with expanded row type.
-addComponent :: forall r r' label a.
+addComponentPure :: forall r r' label a.
   IsSymbol label =>
   Lacks label r =>
   Cons label a r r' =>
@@ -58,7 +93,7 @@ addComponent :: forall r r' label a.
   Entity r ->
   World ->
   { world :: World, entity :: Entity r' }
-addComponent labelProxy componentValue entity world =
+addComponentPure labelProxy componentValue entity world =
   let
     -- Extract label as string
     labelStr = reflectSymbol labelProxy
@@ -88,7 +123,33 @@ addComponent labelProxy componentValue entity world =
           in
             { world: result.world, entity: wrapEntity entityId }
 
--- | Remove a component from an entity with compile-time existence proof.
+-- | Remove a component from an entity (monadic version).
+-- |
+-- | This is the main API. It works within the State monad over World.
+-- |
+-- | Type constraints:
+-- | - IsSymbol label: Label is a compile-time string
+-- | - Cons label a r' r: Proves component exists and can be removed
+-- |
+-- | Example:
+-- | ```purescript
+-- | do
+-- |   e <- spawnEntity
+-- |   e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
+-- |   e'' <- removeComponent (Proxy :: _ "position") e'
+-- |   pure e''  -- Back to empty entity
+-- | ```
+removeComponent :: forall r r' label a.
+  IsSymbol label =>
+  Cons label a r' r =>
+  Proxy label ->
+  Entity r ->
+  State World (Entity r')
+removeComponent labelProxy entity = state \world ->
+  let result = removeComponentPure labelProxy entity world
+  in Tuple result.entity result.world
+
+-- | Remove a component from an entity (pure version for internal use).
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
@@ -104,14 +165,14 @@ addComponent labelProxy componentValue entity world =
 -- | 7. Update entity location tracking
 -- |
 -- | Returns updated World and Entity with reduced row type.
-removeComponent :: forall r r' label a.
+removeComponentPure :: forall r r' label a.
   IsSymbol label =>
   Cons label a r' r =>
   Proxy label ->
   Entity r ->
   World ->
   { world :: World, entity :: Entity r' }
-removeComponent labelProxy entity world =
+removeComponentPure labelProxy entity world =
   let
     -- Extract label as string
     labelStr = reflectSymbol labelProxy
@@ -140,7 +201,37 @@ removeComponent labelProxy entity world =
           in
             { world: result.world, entity: wrapEntity entityId }
 
--- | Get a component value from an entity.
+-- | Get a component value from an entity (monadic version).
+-- |
+-- | This is the main API. It works within the State monad over World.
+-- |
+-- | Type constraints:
+-- | - IsSymbol label: Label is a compile-time string
+-- | - Cons label a trash r: Proves component exists in row type
+-- |
+-- | Returns:
+-- | - Just value: If entity valid and component exists
+-- | - Nothing: If entity invalid or not found
+-- |
+-- | Example:
+-- | ```purescript
+-- | do
+-- |   e <- spawnEntity
+-- |   e' <- addComponent (Proxy :: _ "position") {x: 10.0, y: 20.0} e
+-- |   maybePos <- getComponent (Proxy :: _ "position") e'
+-- |   -- maybePos is Just {x: 10.0, y: 20.0}
+-- | ```
+getComponent :: forall r label a trash.
+  IsSymbol label =>
+  Cons label a trash r =>
+  Proxy label ->
+  Entity r ->
+  State World (Maybe a)
+getComponent labelProxy entity = do
+  world <- get
+  pure $ getComponentPure labelProxy entity world
+
+-- | Get a component value from an entity (pure version).
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
@@ -152,14 +243,14 @@ removeComponent labelProxy entity world =
 -- |
 -- | Note: Type system guarantees component label is valid for this entity type,
 -- | but runtime checks still needed for entity validity.
-getComponent :: forall r label a trash.
+getComponentPure :: forall r label a trash.
   IsSymbol label =>
   Cons label a trash r =>
   Proxy label ->
   Entity r ->
   World ->
   Maybe a
-getComponent labelProxy entity world =
+getComponentPure labelProxy entity world =
   let
     entityId = unEntity entity
     idx = entityIndex entityId

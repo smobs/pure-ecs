@@ -19,7 +19,7 @@ module ECS.System
 
 import Control.Monad.State (State, state, runState)
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponent, removeComponent)
+import ECS.Component (addComponentPure, removeComponentPure)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)
 import ECS.Query (runQuery) as Q
 import ECS.World (World, Entity)
@@ -117,7 +117,7 @@ updateComponent :: forall label a r r' writes trash.
   System r' writes (Entity r)
 updateComponent label newValue entity = state \world ->
   let -- Remove component (entity type: r -> r')
-      {world: world1, entity: entity'} = removeComponent label entity world
+      {world: world1, entity: entity'} = removeComponentPure label entity world
       -- Add component back with new value (entity type: r' -> r)
-      {world: world2, entity: entity''} = addComponent label newValue entity' world1
+      {world: world2, entity: entity''} = addComponentPure label newValue entity' world1
   in Tuple entity'' world2
