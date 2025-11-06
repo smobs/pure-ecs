@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pure ECS - Visual Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 700px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        #canvas {
+            border: 3px solid #e0e0e0;
+            border-radius: 10px;
+            display: block;
+            margin: 0 auto 20px;
+            background: #1a1a2e;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .info {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .info h2 {
+            color: #333;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .color-box {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid #ddd;
+        }
+
+        .legend {
+            color: #555;
+            font-size: 0.95em;
+        }
+
+        .features {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #ddd;
+        }
+
+        .features ul {
+            list-style: none;
+            margin-top: 10px;
+        }
+
+        .features li {
+            padding: 5px 0;
+            color: #555;
+        }
+
+        .features li::before {
+            content: "✓ ";
+            color: #2ecc71;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+
+        .github-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .github-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 1.1em;
+            transition: color 0.3s;
+        }
+
+        .github-link a:hover {
+            color: #764ba2;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pure ECS</h1>
+        <p class="subtitle">A Pure Functional Entity Component System for PureScript</p>
+
+        <canvas id="canvas" width="600" height="400"></canvas>
+
+        <div class="info">
+            <h2>Visual Demo</h2>
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="color-box" style="background: #e74c3c;"></div>
+                    <span class="legend">Red: Takes damage (dies)</span>
+                </div>
+                <div class="info-item">
+                    <div class="color-box" style="background: #2ecc71;"></div>
+                    <span class="legend">Green: No damage (survives)</span>
+                </div>
+                <div class="info-item">
+                    <div class="color-box" style="background: #3498db;"></div>
+                    <span class="legend">Blue: Takes damage (dies)</span>
+                </div>
+                <div class="info-item">
+                    <div class="color-box" style="background: #f39c12;"></div>
+                    <span class="legend">Yellow: No damage (survives)</span>
+                </div>
+            </div>
+
+            <div class="features">
+                <h2>Features</h2>
+                <ul>
+                    <li>Type-safe component composition with row polymorphism</li>
+                    <li>Archetype-based storage for cache efficiency</li>
+                    <li>Pure functional architecture (no mutable state)</li>
+                    <li>Compile-time access tracking for systems</li>
+                    <li>Entity lifecycle management with versioning</li>
+                    <li>Monadic World API for clean composition</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="github-link">
+            <a href="https://github.com/smobs/pure-ecs" target="_blank">View on GitHub →</a>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import the compiled PureScript code
+        import { main } from './app.js';
+
+        // Run the demo
+        main();
+    </script>
+</body>
+</html>

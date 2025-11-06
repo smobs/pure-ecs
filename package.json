@@ -11,7 +11,9 @@
     "build": "npx spago build",
     "test": "npx spago test",
     "docs": "npx spago docs",
-    "clean": "rm -rf output .spago"
+    "clean": "rm -rf output .spago",
+    "build:demo": "spago build && node build-demo.js",
+    "serve": "python3 -m http.server 8000 --directory docs"
   },
   "keywords": [
     "purescript",
@@ -21,7 +23,6 @@
     "game-development"
   ],
   "devDependencies": {
-    "purescript": "^0.15.15",
-    "spago": "^0.93.44"
+    "esbuild": "^0.19.0"
   }
 }

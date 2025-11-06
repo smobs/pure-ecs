@@ -2,6 +2,10 @@
 
 A pure functional Entity Component System (ECS) for PureScript.
 
+## 🎮 [**Live Demo →**](https://smobs.github.io/pure-ecs/)
+
+See the ECS in action with an interactive visual demonstration!
+
 ## Overview
 
 `pure-ecs` is a high-performance, type-safe ECS implementation leveraging PureScript's advanced type system. It uses archetype-based storage for cache-friendly iteration and row polymorphism for compile-time component safety.
