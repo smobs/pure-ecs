@@ -8,9 +8,9 @@
     "url": "https://github.com/smobs/pure-ecs.git"
   },
   "scripts": {
-    "build": "npx spago build",
-    "test": "npx spago test",
-    "docs": "npx spago docs",
+    "build": "spago build",
+    "test": "spago test",
+    "docs": "spago docs",
     "clean": "rm -rf output .spago",
     "build:demo": "spago build && node build-demo.js",
     "serve": "python3 -m http.server 8000 --directory docs"
@@ -23,6 +23,8 @@
     "game-development"
   ],
   "devDependencies": {
-    "esbuild": "^0.19.0"
+    "esbuild": "^0.19.0",
+    "purescript": "^0.15.15",
+    "spago": "next"
   }
 }
