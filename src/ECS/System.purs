@@ -21,7 +21,7 @@ module ECS.System
   , modifyComponent_
   ) where
 
-import Prelude (Unit, ($))
+import Prelude (Unit, unit, ($))
 import Control.Monad.State (State, state, runState)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
