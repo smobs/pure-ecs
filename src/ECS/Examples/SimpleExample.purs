@@ -23,12 +23,13 @@ module ECS.Examples.SimpleExample where
 
 import Prelude
 
-import Control.Monad.State (State, execState)
-import Data.Array (filter, length)
+import Control.Monad.State (State, execState, state)
+import Data.Array (filter, length, foldl)
 import Data.Traversable (for_)
+import Data.Tuple (Tuple(..))
 import ECS.Component ((<+>), (:=))
-import ECS.System (System, runSystem, queryFor, updateComponent)
-import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
+import ECS.System (System, runSystem, queryFor, modifyComponent_)
+import ECS.World (World, emptyWorld, spawnEntity, despawnEntityPure)
 import Effect (Effect)
 import Effect.Console (log)
 import Type.Proxy (Proxy(..))
@@ -61,6 +62,9 @@ type Damage = { amount :: Int }
 -- |
 -- | This system queries all entities with both position and velocity,
 -- | then updates their positions by adding the velocity vector.
+-- |
+-- | **Updated to use modifyComponent_**: This demonstrates the cleaner
+-- | read-modify-write pattern with the new helper function.
 physicsSystem :: forall w r. Number -> System (position :: Position, velocity :: Velocity | r)
                                    (position :: Position | w)
                                    Int
@@ -68,13 +72,14 @@ physicsSystem dt = do
   -- Query for all moving entities
   results <- queryFor @(position :: Position, velocity :: Velocity)
 
-  -- Update each entity's position
+  -- Update each entity's position using modifyComponent_
   for_ results \r -> do
-    let newPos = { x: r.components.position.x + r.components.velocity.x * dt
-                 , y: r.components.position.y + r.components.velocity.y * dt
-                 }
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    modifyComponent_ (Proxy :: _ "position")
+      (\p -> { x: p.x + r.components.velocity.x * dt
+             , y: p.y + r.components.velocity.y * dt })
+      r.entity
 
+  -- Return count of entities moved
   pure $ length results
 
 -- | **Damage System**: Applies damage to entities with health
@@ -85,6 +90,9 @@ physicsSystem dt = do
 -- |
 -- | This system reduces health by the damage amount each tick.
 -- | Returns the count of entities that reached 0 health.
+-- |
+-- | **Updated to use modifyComponent_**: Demonstrates clean read-modify-write
+-- | pattern for applying damage to health components.
 damageSystem :: forall w r. System (health :: Health, damage :: Damage | r)
                        (health :: Health | w)
                        Int
@@ -92,15 +100,16 @@ damageSystem = do
   -- Query for all entities that can take damage
   results <- queryFor @(health :: Health, damage :: Damage)
 
-  -- Count entities that died this tick (before applying damage)
+  -- Count entities that will die this tick
   let deadCount = length $ filter (\r -> r.components.health.current <= r.components.damage.amount) results
 
-  -- Apply damage to each entity
+  -- Apply damage to each entity using modifyComponent_
   for_ results \r -> do
-    let newHealth = r.components.health.current - r.components.damage.amount
-        updatedHealth = r.components.health { current = newHealth }
-    void $ updateComponent (Proxy :: _ "health") updatedHealth r.entity
+    modifyComponent_ (Proxy :: _ "health")
+      (\h -> h { current = h.current - r.components.damage.amount })
+      r.entity
 
+  -- Return count of entities that died
   pure deadCount
 
 -- | **Cleanup System**: Despawns entities with health <= 0
@@ -111,6 +120,8 @@ damageSystem = do
 -- |
 -- | This system queries for entities with health components,
 -- | checks if they're dead (health <= 0), and despawns them.
+-- |
+-- | **Updated to use queryFor**: Shows the cleaner query API.
 cleanupSystem :: forall w r. System (health :: Health | r) w Int
 cleanupSystem = do
   -- Query all entities with health

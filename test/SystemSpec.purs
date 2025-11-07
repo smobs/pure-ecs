@@ -10,7 +10,7 @@ import Data.Tuple (Tuple(..))
 import ECS.Component (addComponentPure, getComponentPure)
 
 import ECS.Query (query, runQuery)
-import ECS.System (System, runSystem, updateComponent)
+import ECS.System (System, runSystem, updateComponent, updateComponent_, modifyComponent, modifyComponent_)
 import ECS.System as S
 import ECS.World (emptyWorld, spawnEntityPure, Entity)
 import Test.Spec (Spec, describe, it)
@@ -269,6 +269,155 @@ systemSpec = do
         pos1 `shouldEqual` Just { x: 2.0, y: 1.0 }
         pos2 `shouldEqual` Just { x: 5.0, y: 6.0 }
 
+    describe "updateComponent_ (fire-and-forget)" do
+      it "updates component without returning entity" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } entity world1
+
+            updateSys :: System () (position :: Position) Unit
+            updateSys = do
+              updateComponent_ (Proxy :: _ "position") { x: 10.0, y: 10.0 } entity'
+              -- No need to bind result
+
+            { world: world', result: _ } = runSystem updateSys world2
+            pos = getComponentPure (Proxy :: _ "position") entity' world'
+
+        pos `shouldEqual` Just { x: 10.0, y: 10.0 }
+
+      it "works in for_ loops cleanly" do
+        let world = emptyWorld
+            {world: world1, entity: e1} = spawnEntityPure world
+            {world: world2, entity: e2} = spawnEntityPure world1
+
+            {world: world3, entity: e1'} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 world2
+            {world: world4, entity: e1''} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e1' world3
+            {world: world5, entity: e2'} = addComponentPure (Proxy :: _ "position") { x: 5.0, y: 5.0 } e2 world4
+            {world: world6, entity: e2''} = addComponentPure (Proxy :: _ "velocity") { x: 0.0, y: 1.0 } e2' world5
+
+            moveSystem :: System (position :: Position, velocity :: Velocity)
+                                 (position :: Position)
+                                 Unit
+            moveSystem = do
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
+              for_ results \r -> do
+                let newPos = { x: r.components.position.x + r.components.velocity.x
+                             , y: r.components.position.y + r.components.velocity.y
+                             }
+                updateComponent_ (Proxy :: _ "position") newPos r.entity
+                -- No void needed!
+
+            { world: world', result: _ } = runSystem moveSystem world6
+            pos1 = getComponentPure (Proxy :: _ "position") e1'' world'
+            pos2 = getComponentPure (Proxy :: _ "position") e2'' world'
+
+        pos1 `shouldEqual` Just { x: 2.0, y: 1.0 }
+        pos2 `shouldEqual` Just { x: 5.0, y: 6.0 }
+
+    describe "modifyComponent (read-modify-write)" do
+      it "modifies existing component with function" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "position") { x: 5.0, y: 10.0 } entity world1
+
+            modifySys :: System () (position :: Position) (Entity (position :: Position))
+            modifySys = do
+              entity'' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity'
+              pure entity''
+
+            { world: world', result: entity'' } = runSystem modifySys world2
+            pos = getComponentPure (Proxy :: _ "position") entity'' world'
+
+        pos `shouldEqual` Just { x: 6.0, y: 10.0 }
+
+      it "handles missing component gracefully" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+
+            modifySys :: System () (position :: Position) (Entity (position :: Position))
+            modifySys = do
+              entity' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
+              pure entity'
+
+            { world: world', result: entity' } = runSystem modifySys world1
+
+        -- Entity unchanged, world unchanged (no component to modify)
+        world' `shouldEqual` world1
+
+      it "transforms component values" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } entity world1
+
+            damageSys :: System () (health :: Health) (Entity (health :: Health))
+            damageSys = do
+              entity'' <- modifyComponent (Proxy :: _ "health") (\h -> h { current = h.current - 25 }) entity'
+              pure entity''
+
+            { world: world', result: entity'' } = runSystem damageSys world2
+            health = getComponentPure (Proxy :: _ "health") entity'' world'
+
+        health `shouldEqual` Just { current: 75, max: 100 }
+
+      it "chains multiple modifications" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity2} = addComponentPure (Proxy :: _ "position") { x: 0.0, y: 0.0 } entity world1
+            {world: world3, entity: entity3} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 2.0 } entity2 world2
+
+            modifyBoth :: System () (position :: Position, velocity :: Velocity) Unit
+            modifyBoth = do
+              e1 <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 10.0 }) entity3
+              void $ modifyComponent (Proxy :: _ "velocity") (\v -> v { y = v.y * 2.0 }) e1
+
+            { world: world', result: _ } = runSystem modifyBoth world3
+            pos = getComponentPure (Proxy :: _ "position") entity3 world'
+            vel = getComponentPure (Proxy :: _ "velocity") entity3 world'
+
+        pos `shouldEqual` Just { x: 10.0, y: 0.0 }
+        vel `shouldEqual` Just { x: 1.0, y: 4.0 }
+
+    describe "modifyComponent_ (fire-and-forget modify)" do
+      it "modifies component without returning entity" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } entity world1
+
+            damageSys :: System () (health :: Health) Unit
+            damageSys = do
+              modifyComponent_ (Proxy :: _ "health") (\h -> h { current = h.current - 50 }) entity'
+              -- No need to bind result
+
+            { world: world', result: _ } = runSystem damageSys world2
+            health = getComponentPure (Proxy :: _ "health") entity' world'
+
+        health `shouldEqual` Just { current: 50, max: 100 }
+
+      it "works in for_ loops for batch modifications" do
+        let world = emptyWorld
+            {world: world1, entity: e1} = spawnEntityPure world
+            {world: world2, entity: e2} = spawnEntityPure world1
+            {world: world3, entity: e3} = spawnEntityPure world2
+
+            {world: world4, entity: e1'} = addComponentPure (Proxy :: _ "health") { current: 50, max: 100 } e1 world3
+            {world: world5, entity: e2'} = addComponentPure (Proxy :: _ "health") { current: 30, max: 100 } e2 world4
+            {world: world6, entity: e3'} = addComponentPure (Proxy :: _ "health") { current: 80, max: 100 } e3 world5
+
+            healSystem :: System (health :: Health) (health :: Health) Unit
+            healSystem = do
+              results <- S.queryFor @(health :: Health)
+              for_ results \r -> do
+                modifyComponent_ (Proxy :: _ "health") (\h -> h { current = h.current + 10 }) r.entity
+
+            { world: world', result: _ } = runSystem healSystem world6
+            h1 = getComponentPure (Proxy :: _ "health") e1' world'
+            h2 = getComponentPure (Proxy :: _ "health") e2' world'
+            h3 = getComponentPure (Proxy :: _ "health") e3' world'
+
+        h1 `shouldEqual` Just { current: 60, max: 100 }
+        h2 `shouldEqual` Just { current: 40, max: 100 }
+        h3 `shouldEqual` Just { current: 90, max: 100 }
+
     describe "foldQuery Helper" do
       it "folds over query results" do
         let world = emptyWorld
@@ -435,3 +584,152 @@ systemSpec = do
 
         pos1 `shouldEqual` Just { x: 2.0, y: 1.0 }
         pos2 `shouldEqual` Just { x: 5.0, y: 6.0 }
+
+    describe "updateComponent_ (fire-and-forget)" do
+      it "updates component without returning entity" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } entity world1
+
+            updateSys :: System () (position :: Position) Unit
+            updateSys = do
+              updateComponent_ (Proxy :: _ "position") { x: 10.0, y: 10.0 } entity'
+              -- No need to bind result
+
+            { world: world', result: _ } = runSystem updateSys world2
+            pos = getComponentPure (Proxy :: _ "position") entity' world'
+
+        pos `shouldEqual` Just { x: 10.0, y: 10.0 }
+
+      it "works in for_ loops cleanly" do
+        let world = emptyWorld
+            {world: world1, entity: e1} = spawnEntityPure world
+            {world: world2, entity: e2} = spawnEntityPure world1
+
+            {world: world3, entity: e1'} = addComponentPure (Proxy :: _ "position") { x: 1.0, y: 1.0 } e1 world2
+            {world: world4, entity: e1''} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 0.0 } e1' world3
+            {world: world5, entity: e2'} = addComponentPure (Proxy :: _ "position") { x: 5.0, y: 5.0 } e2 world4
+            {world: world6, entity: e2''} = addComponentPure (Proxy :: _ "velocity") { x: 0.0, y: 1.0 } e2' world5
+
+            moveSystem :: System (position :: Position, velocity :: Velocity)
+                                 (position :: Position)
+                                 Unit
+            moveSystem = do
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
+              for_ results \r -> do
+                let newPos = { x: r.components.position.x + r.components.velocity.x
+                             , y: r.components.position.y + r.components.velocity.y
+                             }
+                updateComponent_ (Proxy :: _ "position") newPos r.entity
+                -- No void needed!
+
+            { world: world', result: _ } = runSystem moveSystem world6
+            pos1 = getComponentPure (Proxy :: _ "position") e1'' world'
+            pos2 = getComponentPure (Proxy :: _ "position") e2'' world'
+
+        pos1 `shouldEqual` Just { x: 2.0, y: 1.0 }
+        pos2 `shouldEqual` Just { x: 5.0, y: 6.0 }
+
+    describe "modifyComponent (read-modify-write)" do
+      it "modifies existing component with function" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "position") { x: 5.0, y: 10.0 } entity world1
+
+            modifySys :: System () (position :: Position) (Entity (position :: Position))
+            modifySys = do
+              entity'' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity'
+              pure entity''
+
+            { world: world', result: entity'' } = runSystem modifySys world2
+            pos = getComponentPure (Proxy :: _ "position") entity'' world'
+
+        pos `shouldEqual` Just { x: 6.0, y: 10.0 }
+
+      it "handles missing component gracefully" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+
+            modifySys :: System () (position :: Position) (Entity (position :: Position))
+            modifySys = do
+              entity' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
+              pure entity'
+
+            { world: world', result: entity' } = runSystem modifySys world1
+
+        -- Entity unchanged, world unchanged (no component to modify)
+        world' `shouldEqual` world1
+
+      it "transforms component values" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } entity world1
+
+            damageSys :: System () (health :: Health) (Entity (health :: Health))
+            damageSys = do
+              entity'' <- modifyComponent (Proxy :: _ "health") (\h -> h { current = h.current - 25 }) entity'
+              pure entity''
+
+            { world: world', result: entity'' } = runSystem damageSys world2
+            health = getComponentPure (Proxy :: _ "health") entity'' world'
+
+        health `shouldEqual` Just { current: 75, max: 100 }
+
+      it "chains multiple modifications" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity2} = addComponentPure (Proxy :: _ "position") { x: 0.0, y: 0.0 } entity world1
+            {world: world3, entity: entity3} = addComponentPure (Proxy :: _ "velocity") { x: 1.0, y: 2.0 } entity2 world2
+
+            modifyBoth :: System () (position :: Position, velocity :: Velocity) Unit
+            modifyBoth = do
+              e1 <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 10.0 }) entity3
+              void $ modifyComponent (Proxy :: _ "velocity") (\v -> v { y = v.y * 2.0 }) e1
+
+            { world: world', result: _ } = runSystem modifyBoth world3
+            pos = getComponentPure (Proxy :: _ "position") entity3 world'
+            vel = getComponentPure (Proxy :: _ "velocity") entity3 world'
+
+        pos `shouldEqual` Just { x: 10.0, y: 0.0 }
+        vel `shouldEqual` Just { x: 1.0, y: 4.0 }
+
+    describe "modifyComponent_ (fire-and-forget modify)" do
+      it "modifies component without returning entity" do
+        let world = emptyWorld
+            {world: world1, entity: entity} = spawnEntityPure world
+            {world: world2, entity: entity'} = addComponentPure (Proxy :: _ "health") { current: 100, max: 100 } entity world1
+
+            damageSys :: System () (health :: Health) Unit
+            damageSys = do
+              modifyComponent_ (Proxy :: _ "health") (\h -> h { current = h.current - 50 }) entity'
+              -- No need to bind result
+
+            { world: world', result: _ } = runSystem damageSys world2
+            health = getComponentPure (Proxy :: _ "health") entity' world'
+
+        health `shouldEqual` Just { current: 50, max: 100 }
+
+      it "works in for_ loops for batch modifications" do
+        let world = emptyWorld
+            {world: world1, entity: e1} = spawnEntityPure world
+            {world: world2, entity: e2} = spawnEntityPure world1
+            {world: world3, entity: e3} = spawnEntityPure world2
+
+            {world: world4, entity: e1'} = addComponentPure (Proxy :: _ "health") { current: 50, max: 100 } e1 world3
+            {world: world5, entity: e2'} = addComponentPure (Proxy :: _ "health") { current: 30, max: 100 } e2 world4
+            {world: world6, entity: e3'} = addComponentPure (Proxy :: _ "health") { current: 80, max: 100 } e3 world5
+
+            healSystem :: System (health :: Health) (health :: Health) Unit
+            healSystem = do
+              results <- S.queryFor @(health :: Health)
+              for_ results \r -> do
+                modifyComponent_ (Proxy :: _ "health") (\h -> h { current = h.current + 10 }) r.entity
+
+            { world: world', result: _ } = runSystem healSystem world6
+            h1 = getComponentPure (Proxy :: _ "health") e1' world'
+            h2 = getComponentPure (Proxy :: _ "health") e2' world'
+            h3 = getComponentPure (Proxy :: _ "health") e3' world'
+
+        h1 `shouldEqual` Just { current: 60, max: 100 }
+        h2 `shouldEqual` Just { current: 40, max: 100 }
+        h3 `shouldEqual` Just { current: 90, max: 100 }

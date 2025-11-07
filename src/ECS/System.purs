@@ -16,11 +16,16 @@ module ECS.System
   , query
   , queryFor
   , updateComponent
+  , updateComponent_
+  , modifyComponent
+  , modifyComponent_
   ) where
 
+import Prelude (Unit, void, ($))
 import Control.Monad.State (State, state, runState)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponentPure, removeComponentPure)
+import ECS.Component (addComponentPure, removeComponentPure, getComponentPure)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)
 import ECS.Query (runQuery) as Q
 import ECS.Query as ECSQuery
@@ -154,3 +159,114 @@ updateComponent label newValue entity = state \world ->
       -- Add component back with new value (entity type: r' -> r)
       {world: world2, entity: entity''} = addComponentPure label newValue entity' world1
   in Tuple entity'' world2
+
+-- | Fire-and-forget variant of updateComponent.
+-- |
+-- | Use this when you don't need the returned entity reference (common case).
+-- | Returns Unit instead of the updated entity, reducing verbosity.
+-- |
+-- | Type constraints:
+-- | - Same as updateComponent
+-- |
+-- | Example:
+-- | ```purescript
+-- | mySystem = do
+-- |   results <- queryFor @(position :: Position, velocity :: Velocity)
+-- |   for_ results \r -> do
+-- |     let newPos = {x: r.components.position.x + r.components.velocity.x
+-- |                  ,y: r.components.position.y + r.components.velocity.y}
+-- |     updateComponent_ (Proxy :: _ "position") newPos r.entity
+-- |     -- No need to rebind entity
+-- | ```
+-- |
+-- | Comparison:
+-- | - Use `updateComponent` when you need the updated entity for subsequent operations
+-- | - Use `updateComponent_` when the update is final (fire-and-forget)
+updateComponent_ :: forall label a r r' writes trash.
+  IsSymbol label =>
+  Cons label a r' r =>
+  Cons label a trash writes =>
+  Lacks label r' =>
+  Proxy label ->
+  a ->
+  Entity r ->
+  System r' writes Unit
+updateComponent_ proxy value entity = void $ updateComponent proxy value entity
+
+-- | Modify a component using a transformation function (read-modify-write).
+-- |
+-- | This helper combines get + modify + update into a single operation,
+-- | dramatically reducing verbosity for the common read-modify-write pattern.
+-- |
+-- | Type constraints:
+-- | - IsSymbol label: Label is a compile-time string
+-- | - Cons label a r' r: Component exists in entity and can be removed
+-- | - Cons label a trash writes: Component is in write set
+-- | - Lacks label r': After removal, component doesn't exist
+-- |
+-- | Returns:
+-- | - Updated entity: If component exists
+-- | - Unchanged entity: If component doesn't exist (graceful handling)
+-- |
+-- | Example:
+-- | ```purescript
+-- | mySystem = do
+-- |   results <- queryFor @(position :: Position, velocity :: Velocity)
+-- |   for_ results \r -> do
+-- |     -- Increment position.x by 1.0
+-- |     entity' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) r.entity
+-- |
+-- |     -- Even cleaner with record update syntax
+-- |     entity'' <- modifyComponent (Proxy :: _ "position") (_ { x = _ + 1.0 }) entity'
+-- |
+-- |     pure unit
+-- | ```
+-- |
+-- | Comparison:
+-- | - Use `updateComponent` when you have the new value directly
+-- | - Use `modifyComponent` when you need to transform the existing value
+-- | - Use `getComponent` then `updateComponent` when you need the old value elsewhere
+modifyComponent :: forall label a r r' writes trash.
+  IsSymbol label =>
+  Cons label a r' r =>
+  Cons label a trash writes =>
+  Lacks label r' =>
+  Proxy label ->
+  (a -> a) ->
+  Entity r ->
+  System r' writes (Entity r)
+modifyComponent proxy f entity = state \world ->
+  case getComponentPure proxy entity world of
+    Nothing -> Tuple entity world
+    Just value ->
+      let {world: w1, entity: e1} = removeComponentPure proxy entity world
+          {world: w2, entity: e2} = addComponentPure proxy (f value) e1 w1
+      in Tuple e2 w2
+
+-- | Fire-and-forget variant of modifyComponent.
+-- |
+-- | Use this when you don't need the returned entity reference.
+-- | Returns Unit instead of the updated entity.
+-- |
+-- | Type constraints:
+-- | - Same as modifyComponent
+-- |
+-- | Example:
+-- | ```purescript
+-- | mySystem = do
+-- |   results <- queryFor @(health :: Health)
+-- |   for_ results \r -> do
+-- |     -- Reduce health by damage amount
+-- |     modifyComponent_ (Proxy :: _ "health") (_ { current = _ - damage }) r.entity
+-- |     -- No need to rebind entity
+-- | ```
+modifyComponent_ :: forall label a r r' writes trash.
+  IsSymbol label =>
+  Cons label a r' r =>
+  Cons label a trash writes =>
+  Lacks label r' =>
+  Proxy label ->
+  (a -> a) ->
+  Entity r ->
+  System r' writes Unit
+modifyComponent_ proxy f entity = void $ modifyComponent proxy f entity
