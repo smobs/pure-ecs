@@ -61,3 +61,11 @@ export const readRef = ref => () => {
 export const writeRef = ref => value => () => {
   ref.value = value;
 };
+
+export const setControlCallbacks = pauseCallback => resetCallback => setSpeedCallback => () => {
+  if (window.ecsControls) {
+    window.ecsControls.pause = (isPaused) => pauseCallback(isPaused)();
+    window.ecsControls.reset = () => resetCallback();
+    window.ecsControls.setSpeed = (speed) => setSpeedCallback(speed)();
+  }
+};
