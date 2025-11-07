@@ -121,7 +121,9 @@ queryFor :: forall @required reads writes extra rl.
 queryFor =
   let q :: Query required ()
       q = ECSQuery.query (Proxy :: Proxy required)
-  in query q
+      result :: System reads writes (Array (QueryResult required))
+      result = query q
+  in result
 
 -- | Update a component within a system.
 -- |
