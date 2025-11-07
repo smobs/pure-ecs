@@ -13,11 +13,10 @@
 -- | Example usage:
 -- | ```purescript
 -- | setupWorld :: WorldM (Entity (position :: Position, velocity :: Velocity))
--- | setupWorld = do
--- |   e <- spawnEntity
--- |   e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
--- |   e'' <- addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e'
--- |   pure e''
+-- | setupWorld =
+-- |   spawnEntity
+-- |     <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- |     <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
 -- |
 -- | let world = execWorld setupWorld emptyWorld
 -- | ```
@@ -55,10 +54,9 @@ type WorldM a = State World a
 -- |
 -- | Example:
 -- | ```purescript
--- | let Tuple entity finalWorld = runWorld (do
--- |       e <- spawnEntity
--- |       addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
--- |     ) emptyWorld
+-- | let Tuple entity finalWorld = runWorld
+-- |       (spawnEntity <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0})
+-- |       emptyWorld
 -- | ```
 runWorld :: forall a. WorldM a -> World -> Tuple a World
 runWorld = runState
@@ -69,10 +67,9 @@ runWorld = runState
 -- |
 -- | Example:
 -- | ```purescript
--- | let world = execWorld (do
--- |       e <- spawnEntity
--- |       addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
--- |     ) emptyWorld
+-- | let world = execWorld
+-- |       (spawnEntity <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0})
+-- |       emptyWorld
 -- | ```
 execWorld :: forall a. WorldM a -> World -> World
 execWorld = execState

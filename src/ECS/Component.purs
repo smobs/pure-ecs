@@ -14,6 +14,12 @@ module ECS.Component
   , removeComponent
   , getComponent
   , hasComponent
+  -- Chaining combinator
+  , with
+  , (<+>)
+  -- Component pairing for elegant syntax
+  , ComponentPair(..)
+  , (:=)
   -- Pure versions (for internal use)
   , addComponentPure
   , removeComponentPure
@@ -66,6 +72,61 @@ addComponent :: forall r r' label a.
 addComponent labelProxy componentValue entity = state \world ->
   let result = addComponentPure labelProxy componentValue entity world
   in Tuple result.entity result.world
+
+-- | Component label-value pair for elegant chaining syntax.
+-- |
+-- | Used with the `:=` operator to create readable component additions:
+-- | ```purescript
+-- | entity <- spawnEntity
+-- |   <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- |   <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
+-- | ```
+data ComponentPair label a = ComponentPair (Proxy label) a
+
+-- | Infix operator for pairing component label with value.
+-- |
+-- | Reads naturally: "position has value {x: 0.0, y: 0.0}"
+-- |
+-- | Example:
+-- | ```purescript
+-- | (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- | ```
+infixr 6 ComponentPair as :=
+
+-- | Chaining combinator for adding components without manual entity threading.
+-- |
+-- | This combinator prevents stale entity reference bugs by automatically
+-- | threading the entity through component additions.
+-- |
+-- | Example:
+-- | ```purescript
+-- | entity <- spawnEntity
+-- |   <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- |   <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
+-- |   <+> (Proxy :: _ "health") := {current: 100, max: 100}
+-- | ```
+-- |
+-- | This is equivalent to:
+-- | ```purescript
+-- | e1 <- spawnEntity
+-- | e2 <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e1
+-- | e3 <- addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e2
+-- | entity <- addComponent (Proxy :: _ "health") {current: 100, max: 100} e3
+-- | ```
+-- |
+-- | But impossible to accidentally use the wrong intermediate entity.
+with :: forall r r' label a.
+  IsSymbol label =>
+  Lacks label r =>
+  Cons label a r r' =>
+  State World (Entity r) ->
+  ComponentPair label a ->
+  State World (Entity r')
+with entityAction (ComponentPair proxy value) = do
+  entity <- entityAction
+  addComponent proxy value entity
+
+infixl 5 with as <+>
 
 -- | Add a component to an entity (pure version for internal use).
 -- |

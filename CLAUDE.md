@@ -7,7 +7,7 @@ Pure functional Entity Component System with row-polymorphic type safety.
 ```purescript
 import Control.Monad.State (execState)
 import ECS.World (emptyWorld, spawnEntity)
-import ECS.Component (addComponent)
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.System as S
@@ -17,17 +17,12 @@ import Type.Proxy (Proxy(..))
 type Position = { x :: Number, y :: Number }
 type Velocity = { x :: Number, y :: Number }
 
--- Create world and spawn entity using monadic API (no manual world threading!)
-let world = execState (do
-      -- Spawn entity
-      e <- spawnEntity
-
-      -- Add components (types automatically tracked!)
-      e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
-      e'' <- addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e'
-      -- e'' now has type: Entity (position :: Position, velocity :: Velocity)
-
-      pure e''
+-- Create world and spawn entity using chaining combinator (impossible to use stale reference!)
+let world = execState (
+      spawnEntity
+        <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+        <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
+      -- Entity type: Entity (position :: Position, velocity :: Velocity)
     ) emptyWorld
 
 -- Create system using State monad
@@ -65,11 +60,20 @@ let world = execState (do
 - Type-safe component access with row constraints
 - `Lacks` prevents duplicates, `Cons` proves existence
 - Entity phantom type updates automatically
+- **Chaining combinator** (`<+>`) prevents stale entity reference bugs
 
-**Key functions**: `addComponent`, `removeComponent`, `getComponent`, `hasComponent`
+**Key functions**: `addComponent`, `removeComponent`, `getComponent`, `hasComponent`, `<+>` (with)
 
 **Important**: `addComponent` cannot update existing components (has `Lacks` constraint).
 Use `removeComponent` then `addComponent`, or use System's `updateComponent` helper.
+
+**Chaining Pattern**: Use the `<+>` combinator to add components without manual entity threading:
+```purescript
+entity <- spawnEntity
+  <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+  <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
+-- Impossible to accidentally use wrong intermediate entity!
+```
 
 ### Phase 4: Query (`ECS.Query`)
 - Row-polymorphic queries preserve field names
@@ -186,14 +190,14 @@ class ExtractLabels (rl :: RowList Type) where ...
 
 ### Building Entities
 ```purescript
--- Clean monadic composition (no manual world threading!)
-buildEntity = do
-  e1 <- spawnEntity
-  e2 <- addComponent (Proxy :: _ "position") pos e1
-  e3 <- addComponent (Proxy :: _ "velocity") vel e2
-  e4 <- addComponent (Proxy :: _ "health") hp e3
-  pure e4
-  -- e4 has type: Entity (position :: Position, velocity :: Velocity, health :: Health)
+-- Chaining combinator prevents stale entity reference bugs
+buildEntity =
+  spawnEntity
+    <+> (Proxy :: _ "position") := pos
+    <+> (Proxy :: _ "velocity") := vel
+    <+> (Proxy :: _ "health") := hp
+  -- Result type: Entity (position :: Position, velocity :: Velocity, health :: Health)
+  -- Impossible to accidentally use wrong intermediate entity!
 
 -- Execute within a world
 let world' = execState buildEntity emptyWorld
@@ -215,7 +219,6 @@ movementSystem dt = do
 
 -- Manual state pattern (for inline systems)
 import Control.Monad.State as CMS
-import Data.Tuple (Tuple(..))
 
 simpleSystem :: System (position :: Position) () Unit
 simpleSystem = CMS.state \world ->
@@ -357,8 +360,9 @@ Run: `spago test`
 module Game where
 
 import Prelude
+import Control.Monad.State (execState)
 import ECS.World as ECS
-import ECS.Component (addComponent)
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.System as S
@@ -369,13 +373,13 @@ import Data.Traversable (for_)
 type Position = {x :: Number, y :: Number}
 type Velocity = {x :: Number, y :: Number}
 
--- 2. Setup world (monadic API - no manual world threading!)
+-- 2. Setup world (chaining combinator - impossible to use stale reference!)
 setupWorld = execState setupEntities ECS.emptyWorld
   where
-    setupEntities = do
-      e <- ECS.spawnEntity
-      e' <- addComponent (Proxy :: _ "position") {x: 0.0, y: 0.0} e
-      void $ addComponent (Proxy :: _ "velocity") {x: 1.0, y: 1.0} e'
+    setupEntities =
+      ECS.spawnEntity
+        <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+        <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
 
 -- 3. Create system using State monad
 moveSystem :: Number -> System (position :: Position, velocity :: Velocity) (position :: Position) Unit
@@ -395,9 +399,40 @@ main = do
 
 ---
 
-**Last Updated**: 2025-11-06 (Monadic World API)
-**Version**: 3.0.0
+**Last Updated**: 2025-11-07 (Chaining Combinator)
+**Version**: 3.1.0
 **Status**: Production Ready ✅
+
+## Migration from 3.0 to 3.1
+
+**Major Improvement**: Chaining combinator (`<+>`) prevents stale entity reference bugs by making it impossible to use wrong intermediate entities.
+
+### Old API (3.0 - manual entity threading):
+```purescript
+let world' = execState (do
+      e1 <- spawnEntity
+      e2 <- addComponent (Proxy :: _ "position") pos e1
+      e3 <- addComponent (Proxy :: _ "velocity") vel e2  -- Easy to accidentally use e1 instead!
+      pure e3
+    ) world
+```
+
+### New API (3.1 - chaining combinator):
+```purescript
+let world' = execState (
+      spawnEntity
+        <+> (Proxy :: _ "position") := pos
+        <+> (Proxy :: _ "velocity") := vel
+      -- Impossible to use wrong entity reference!
+    ) world
+```
+
+### Migration Steps:
+1. Import `(<+>)` and `(:=)` from `ECS.Component`
+2. Replace manual entity threading (`e1 <- ...; e2 <- addComponent ... e1`) with chaining
+3. Wrap component label and value in `(Proxy :: _ "label") := value`
+4. Remove intermediate entity bindings (e1, e2, e3, etc.)
+5. Old API still available for cases requiring conditional logic
 
 ## Migration from 2.x to 3.0
 
@@ -410,21 +445,20 @@ let {world: w1, entity: e1} = spawnEntity world
     {world: w3, entity: e3} = addComponent (Proxy :: _ "velocity") vel e2 w2
 ```
 
-### New API (3.0):
+### New API (3.0+):
 ```purescript
-let world' = execState (do
-      e1 <- spawnEntity
-      e2 <- addComponent (Proxy :: _ "position") pos e1
-      e3 <- addComponent (Proxy :: _ "velocity") vel e2
-      pure e3
+let world' = execState (
+      spawnEntity
+        <+> (Proxy :: _ "position") := pos
+        <+> (Proxy :: _ "velocity") := vel
     ) world
 ```
 
 ### Migration Steps:
 1. Import `execState` from `Control.Monad.State`
-2. Wrap entity creation code in `execState ... emptyWorld`
-3. Replace `{world: wN, entity: eN} = ...` with `eN <- ...`
-4. Remove manual world threading variables (w1, w2, w3, etc.)
+2. Import `(<+>)` and `(:=)` from `ECS.Component`
+3. Wrap entity creation code in `execState ... emptyWorld`
+4. Use chaining combinator instead of manual threading
 5. For tests or internal code, pure versions are available: `spawnEntityPure`, `addComponentPure`, etc.
 
 ## Migration from 1.x to 2.0
