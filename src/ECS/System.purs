@@ -118,7 +118,8 @@ queryFor :: forall @required reads writes extra rl.
   ReadComponents rl required =>
   Union required extra reads =>
   System reads writes (Array (QueryResult required))
-queryFor = query (ECSQuery.query (Proxy :: Proxy required) :: Query required ())
+queryFor = state \world ->
+  Tuple (Q.runQuery (ECSQuery.query (Proxy :: Proxy required)) world) world
 
 -- | Update a component within a system.
 -- |
