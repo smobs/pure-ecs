@@ -14,6 +14,7 @@ See the ECS in action with an interactive visual demonstration!
 
 - **Pure Functional**: Immutable world state, enabling time-travel debugging and easy testing
 - **Type-Safe**: Row polymorphism with `Lacks` and `Cons` constraints prevent bugs at compile-time
+- **Chaining Combinator**: Prevents stale entity reference bugs - impossible to use wrong intermediate entity!
 - **Monadic API**: Clean State monad API eliminates manual world threading - no more `{world: w1, entity: e1}` patterns!
 - **High Performance**: Archetype-based storage groups entities by component signature for cache-friendly iteration
 - **Generational Indices**: Prevents use-after-free bugs through entity versioning
@@ -41,12 +42,13 @@ spago install
 module Main where
 
 import Prelude
-import Control.Monad.State (State, execState)
+import Control.Monad.State (execState)
 import Data.Traversable (for_)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 import ECS.World (World, emptyWorld, spawnEntity)
-import ECS.Component (addComponent)
+import ECS.Component ((<+>))
 import ECS.Query (query)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.System as S
@@ -56,12 +58,11 @@ import Type.Proxy (Proxy(..))
 type Position = { x :: Number, y :: Number }
 type Velocity = { dx :: Number, dy :: Number }
 
--- Create entities using monadic API (no manual world threading!)
-setupWorld :: State World Unit
-setupWorld = do
-  entity <- spawnEntity
-  entity' <- addComponent (Proxy :: _ "position") { x: 0.0, y: 0.0 } entity
-  void $ addComponent (Proxy :: _ "velocity") { dx: 1.0, dy: 0.5 } entity'
+-- Create entities using chaining combinator (impossible to use stale reference!)
+setupWorld =
+  void $ spawnEntity
+    <+> Tuple (Proxy :: _ "position") { x: 0.0, y: 0.0 }
+    <+> Tuple (Proxy :: _ "velocity") { dx: 1.0, dy: 0.5 }
 
 -- Query and update system
 physicsSystem :: System (position :: Position, velocity :: Velocity) (position :: Position) Unit
