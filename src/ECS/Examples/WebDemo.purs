@@ -13,7 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Int (toNumber)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponent)
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query, runQuery)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.World (World, emptyWorld, spawnEntity, despawnEntityPure)
@@ -180,34 +180,34 @@ setupWorld = execState setupEntities emptyWorld
     setupEntities :: State World Unit
     setupEntities = do
       -- Entity 1: Red ball with damage (will die slowly)
-      e1 <- spawnEntity
-      e1' <- addComponent (Proxy :: _ "position") { x: 100.0, y: 100.0 } e1
-      e1'' <- addComponent (Proxy :: _ "velocity") { x: 50.0, y: 30.0 } e1'
-      e1''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e1''
-      e1'''' <- addComponent (Proxy :: _ "damage") { amount: 2 } e1'''
-      void $ addComponent (Proxy :: _ "visual") { color: "#e74c3c", radius: 15.0 } e1''''
+      void $ spawnEntity
+        <+> (Proxy :: _ "position") := { x: 100.0, y: 100.0 }
+        <+> (Proxy :: _ "velocity") := { x: 50.0, y: 30.0 }
+        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
+        <+> (Proxy :: _ "damage") := { amount: 2 }
+        <+> (Proxy :: _ "visual") := { color: "#e74c3c", radius: 15.0 }
 
       -- Entity 2: Green ball, no damage (survives)
-      e2 <- spawnEntity
-      e2' <- addComponent (Proxy :: _ "position") { x: 300.0, y: 200.0 } e2
-      e2'' <- addComponent (Proxy :: _ "velocity") { x: -30.0, y: 40.0 } e2'
-      e2''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e2''
-      void $ addComponent (Proxy :: _ "visual") { color: "#2ecc71", radius: 20.0 } e2'''
+      void $ spawnEntity
+        <+> (Proxy :: _ "position") := { x: 300.0, y: 200.0 }
+        <+> (Proxy :: _ "velocity") := { x: -30.0, y: 40.0 }
+        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
+        <+> (Proxy :: _ "visual") := { color: "#2ecc71", radius: 20.0 }
 
       -- Entity 3: Blue ball with moderate damage
-      e3 <- spawnEntity
-      e3' <- addComponent (Proxy :: _ "position") { x: 500.0, y: 150.0 } e3
-      e3'' <- addComponent (Proxy :: _ "velocity") { x: -40.0, y: -35.0 } e3'
-      e3''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e3''
-      e3'''' <- addComponent (Proxy :: _ "damage") { amount: 3 } e3'''
-      void $ addComponent (Proxy :: _ "visual") { color: "#3498db", radius: 12.0 } e3''''
+      void $ spawnEntity
+        <+> (Proxy :: _ "position") := { x: 500.0, y: 150.0 }
+        <+> (Proxy :: _ "velocity") := { x: -40.0, y: -35.0 }
+        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
+        <+> (Proxy :: _ "damage") := { amount: 3 }
+        <+> (Proxy :: _ "visual") := { color: "#3498db", radius: 12.0 }
 
       -- Entity 4: Yellow ball, fast, no damage
-      e4 <- spawnEntity
-      e4' <- addComponent (Proxy :: _ "position") { x: 200.0, y: 300.0 } e4
-      e4'' <- addComponent (Proxy :: _ "velocity") { x: 60.0, y: -50.0 } e4'
-      e4''' <- addComponent (Proxy :: _ "health") { current: 100, max: 100 } e4''
-      void $ addComponent (Proxy :: _ "visual") { color: "#f39c12", radius: 18.0 } e4'''
+      void $ spawnEntity
+        <+> (Proxy :: _ "position") := { x: 200.0, y: 300.0 }
+        <+> (Proxy :: _ "velocity") := { x: 60.0, y: -50.0 }
+        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
+        <+> (Proxy :: _ "visual") := { color: "#f39c12", radius: 18.0 }
 
 -- ============================================================================
 -- Main Loop
