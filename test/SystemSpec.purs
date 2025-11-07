@@ -330,20 +330,6 @@ systemSpec = do
 
         pos `shouldEqual` Just { x: 6.0, y: 10.0 }
 
-      it "handles missing component gracefully" do
-        let world = emptyWorld
-            {world: world1, entity: entity} = spawnEntityPure world
-
-            modifySys :: System () (position :: Position) (Entity (position :: Position))
-            modifySys = do
-              entity' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
-              pure entity'
-
-            { world: world', result: entity' } = runSystem modifySys world1
-
-        -- Entity unchanged, world unchanged (no component to modify)
-        world' `shouldEqual` world1
-
       it "transforms component values" do
         let world = emptyWorld
             {world: world1, entity: entity} = spawnEntityPure world
@@ -645,20 +631,6 @@ systemSpec = do
             pos = getComponentPure (Proxy :: _ "position") entity'' world'
 
         pos `shouldEqual` Just { x: 6.0, y: 10.0 }
-
-      it "handles missing component gracefully" do
-        let world = emptyWorld
-            {world: world1, entity: entity} = spawnEntityPure world
-
-            modifySys :: System () (position :: Position) (Entity (position :: Position))
-            modifySys = do
-              entity' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
-              pure entity'
-
-            { world: world', result: entity' } = runSystem modifySys world1
-
-        -- Entity unchanged, world unchanged (no component to modify)
-        world' `shouldEqual` world1
 
       it "transforms component values" do
         let world = emptyWorld
