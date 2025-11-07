@@ -21,7 +21,7 @@ module ECS.System
   , modifyComponent_
   ) where
 
-import Prelude (Unit, void, ($))
+import Prelude (Unit, ($))
 import Control.Monad.State (State, state, runState)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
@@ -191,7 +191,12 @@ updateComponent_ :: forall label a r r' writes trash.
   a ->
   Entity r ->
   System r' writes Unit
-updateComponent_ proxy value entity = void $ updateComponent proxy value entity
+updateComponent_ label newValue entity = state \world ->
+  let -- Remove component (entity type: r -> r')
+      {world: world1, entity: entity'} = removeComponentPure label entity world
+      -- Add component back with new value (entity type: r' -> r)
+      {world: world2, entity: _} = addComponentPure label newValue entity' world1
+  in Tuple unit world2
 
 -- | Modify a component using a transformation function (read-modify-write).
 -- |
@@ -269,4 +274,10 @@ modifyComponent_ :: forall label a r r' writes trash.
   (a -> a) ->
   Entity r ->
   System r' writes Unit
-modifyComponent_ proxy f entity = void $ modifyComponent proxy f entity
+modifyComponent_ proxy f entity = state \world ->
+  case getComponentPure proxy entity world of
+    Nothing -> Tuple unit world
+    Just value ->
+      let {world: w1, entity: e1} = removeComponentPure proxy entity world
+          {world: w2, entity: _} = addComponentPure proxy (f value) e1 w1
+      in Tuple unit w2
