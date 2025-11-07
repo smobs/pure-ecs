@@ -56,18 +56,18 @@ jobs:
         run: npm run docs
 
       - name: Bundle demo with esbuild
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch'
         run: node build-demo.js
 
       - name: Upload artifact
-        if: github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs
 
   deploy:
-    # Only deploy on main branch after successful build
-    if: github.ref == 'refs/heads/main'
+    # Only deploy when manually triggered (from any branch)
+    if: github.event_name == 'workflow_dispatch'
     needs: build-and-test
     environment:
       name: github-pages
