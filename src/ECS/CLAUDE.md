@@ -9,7 +9,7 @@ import Control.Monad.State (execState)
 import ECS.World (emptyWorld, spawnEntity)
 import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
+import ECS.System (System, runSystem, updateComponent_)
 import ECS.System as S
 import Type.Proxy (Proxy(..))
 
@@ -30,7 +30,7 @@ let world = execState (
     moveSystem = do
       results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
       for_ results \r -> do
-        void $ updateComponent (Proxy :: _ "position") newPos r.entity
+        updateComponent_ (Proxy :: _ "position") newPos r.entity
       -- Type-safe access: r.components.position
 
 -- Run system
@@ -274,7 +274,7 @@ dependencies:
 import ECS.World (World, emptyWorld, spawnEntity)
 import ECS.Component (addComponent, getComponent)
 import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
+import ECS.System (System, runSystem, updateComponent_)
 import ECS.System as S
 ```
 
@@ -364,7 +364,7 @@ import Control.Monad.State (execState)
 import ECS.World as ECS
 import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
+import ECS.System (System, runSystem, updateComponent_)
 import ECS.System as S
 import Type.Proxy (Proxy(..))
 import Data.Traversable (for_)

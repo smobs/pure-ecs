@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import ECS.Component (addComponentPure, getComponentPure, hasComponent, removeComponentPure)
 import ECS.Entity (entityIndex)
 import ECS.Query (query, runQuery, without)
-import ECS.System (System, runSystem, updateComponent)
+import ECS.System (System, runSystem, updateComponent, updateComponent_)
 import ECS.World (emptyWorld, spawnEntityPure, despawnEntityPure, unEntity)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -50,8 +50,7 @@ integrationSpec = do
             -- Update component via system
             updateSys :: System (position :: Position) (position :: Position) Unit
             updateSys = do
-              void $ updateComponent (Proxy :: _ "position") { x: 10.0, y: 10.0 } entity4
-              pure unit
+              updateComponent_ (Proxy :: _ "position") { x: 10.0, y: 10.0 } entity4
 
             {world: world5, result: _} = runSystem updateSys world4
 

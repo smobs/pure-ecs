@@ -68,7 +68,7 @@ physicsSystem = do
   for_ results \r -> do
     let newPos = { x: r.components.position.x + r.components.velocity.dx
                  , y: r.components.position.y + r.components.velocity.dy }
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
 
 main :: Effect Unit
 main = do

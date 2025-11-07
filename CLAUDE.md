@@ -210,7 +210,7 @@ let world' = execState buildEntity emptyWorld
 
 **Recommended pattern** (use this 99% of the time):
 ```purescript
-import ECS.System (System, runSystem, updateComponent, queryFor)
+import ECS.System (System, runSystem, updateComponent_, queryFor)
 import Data.Traversable (for_)
 
 movementSystem :: Number -> System (position :: Position, velocity :: Velocity)
@@ -221,7 +221,7 @@ movementSystem dt = do
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
   pure $ length results
 ```
 
@@ -455,7 +455,7 @@ moveSystem dt = do
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
 
 -- 4. Run game loop
 main = do
@@ -546,13 +546,13 @@ composed = composeSystem sys1 sys2
 
 ### New API (2.0+):
 ```purescript
-import ECS.System (System, runSystem, updateComponent, queryFor)
+import ECS.System (System, runSystem, updateComponent_, queryFor)
 
 mySystem :: System (position :: Position) (position :: Position) Unit
 mySystem = do
   results <- queryFor @(position :: Position)
   for_ results \r -> do
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
 
 -- Composition via do-notation
 composed = do

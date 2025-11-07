@@ -233,7 +233,7 @@ systemSpec = do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
                              }
-                void $ updateComponent (Proxy :: _ "position") newPos r.entity
+                updateComponent_ (Proxy :: _ "position") newPos r.entity
 
             { world: world', result: _ } = runSystem moveSystem world3
             pos = getComponentPure (Proxy :: _ "position") entity3 world'
@@ -260,7 +260,7 @@ systemSpec = do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
                              }
-                void $ updateComponent (Proxy :: _ "position") newPos r.entity
+                updateComponent_ (Proxy :: _ "position") newPos r.entity
 
             { world: world', result: _ } = runSystem moveSystem world6
             pos1 = getComponentPure (Proxy :: _ "position") e1'' world'
@@ -440,7 +440,7 @@ systemSpec = do
               results <- S.queryFor @(health :: Health)
               let filtered = filter (\r -> r.components.health.current < 50) results
               for_ filtered \r -> do
-                void $ updateComponent (Proxy :: _ "health") { current: 100, max: 100 } r.entity
+                updateComponent_ (Proxy :: _ "health") { current: 100, max: 100 } r.entity
 
             { world: world', result: _ } = runSystem healLowHealth world6
             h1 = getComponentPure (Proxy :: _ "health") e1' world'
@@ -474,7 +474,7 @@ systemSpec = do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
                              }
-                void $ updateComponent (Proxy :: _ "position") newPos r.entity
+                updateComponent_ (Proxy :: _ "position") newPos r.entity
 
             combined = do
               setupSystem
@@ -562,7 +562,7 @@ systemSpec = do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
                              }
-                void $ updateComponent (Proxy :: _ "position") newPos r.entity
+                updateComponent_ (Proxy :: _ "position") newPos r.entity
 
             { world: world', result: _ } = runSystem moveSystem world6
             pos1 = getComponentPure (Proxy :: _ "position") e1'' world'
