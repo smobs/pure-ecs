@@ -118,12 +118,7 @@ queryFor :: forall @required reads writes extra rl.
   ReadComponents rl required =>
   Union required extra reads =>
   System reads writes (Array (QueryResult required))
-queryFor =
-  let q :: Query required ()
-      q = ECSQuery.query (Proxy :: Proxy required)
-      result :: System reads writes (Array (QueryResult required))
-      result = query q
-  in result
+queryFor = query (ECSQuery.query (Proxy :: Proxy required) :: Query required ())
 
 -- | Update a component within a system.
 -- |
