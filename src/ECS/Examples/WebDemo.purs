@@ -7,16 +7,16 @@ module ECS.Examples.WebDemo where
 
 import Prelude
 
-import Control.Monad.State (State, state, execState)
-import Data.Array (foldl, filter, length)
+import Control.Monad.State (State, execState)
+import Data.Array (filter, length)
 import Data.Maybe (Maybe(..))
 import Data.Int (toNumber)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..))
 import ECS.Component ((<+>), (:=))
 import ECS.Query (query, runQuery)
-import ECS.System (System, runSystem, updateComponent)
-import ECS.World (World, emptyWorld, spawnEntity, despawnEntityPure)
+import ECS.System (System, runSystem, queryFor, updateComponent)
+import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
 import Effect (Effect)
 import Effect.Console (log)
 import Type.Proxy (Proxy(..))
@@ -56,63 +56,67 @@ foreign import setControlCallbacks :: (Boolean -> Effect Unit) -> Effect Unit ->
 -- ============================================================================
 
 physicsSystem :: forall w r. Number -> System (position :: Position, velocity :: Velocity | r)
-                                   (position :: Position | w)
+                                   (position :: Position, velocity :: Velocity | w)
                                    Int
-physicsSystem dt = state \world ->
-  let q = query (Proxy :: _ (position :: Position, velocity :: Velocity))
-      results = runQuery q world
+physicsSystem dt = do
+  -- Query for all moving entities
+  results <- queryFor @(position :: Position, velocity :: Velocity)
 
-      updatePosition result w =
-        let newPos = { x: result.components.position.x + result.components.velocity.x * dt
-                     , y: result.components.position.y + result.components.velocity.y * dt
+  -- Update each entity's position and handle bouncing
+  for_ results \r -> do
+    let newPos = { x: r.components.position.x + r.components.velocity.x * dt
+                 , y: r.components.position.y + r.components.velocity.y * dt
+                 }
+        -- Keep entities on screen (bounce)
+        bounceX = if newPos.x < 20.0 || newPos.x > 580.0
+                  then { x: -r.components.velocity.x, y: r.components.velocity.y }
+                  else r.components.velocity
+        bounceY = if newPos.y < 20.0 || newPos.y > 380.0
+                  then { x: bounceX.x, y: -r.components.velocity.y }
+                  else bounceX
+        clampedPos = { x: clamp 20.0 580.0 newPos.x
+                     , y: clamp 20.0 380.0 newPos.y
                      }
-            -- Keep entities on screen (bounce)
-            bounceX = if newPos.x < 20.0 || newPos.x > 580.0
-                      then { x: -result.components.velocity.x, y: result.components.velocity.y }
-                      else result.components.velocity
-            bounceY = if newPos.y < 20.0 || newPos.y > 380.0
-                      then { x: bounceX.x, y: -result.components.velocity.y }
-                      else bounceX
-            clampedPos = { x: clamp 20.0 580.0 newPos.x
-                         , y: clamp 20.0 380.0 newPos.y
-                         }
-            {world: w', result: _} = runSystem (updateComponent (Proxy :: _ "position") clampedPos result.entity) w
-            {world: w'', result: _} = if bounceX /= result.components.velocity || bounceY /= result.components.velocity
-                                      then runSystem (updateComponent (Proxy :: _ "velocity") bounceY result.entity) w'
-                                      else {world: w', result: result.entity}
-        in w''
 
-      world' = foldl (\w r -> updatePosition r w) world results
-  in Tuple (foldl (\acc _ -> acc + 1) 0 results) world'
+    entity' <- updateComponent (Proxy :: _ "position") clampedPos r.entity
+    when (bounceX /= r.components.velocity || bounceY /= r.components.velocity) do
+      void $ updateComponent (Proxy :: _ "velocity") bounceY entity'
+
+  pure $ length results
   where
     clamp min max val = if val < min then min else if val > max then max else val
 
 damageSystem :: forall w r. System (health :: Health, damage :: Damage | r)
                        (health :: Health | w)
                        Int
-damageSystem = state \world ->
-  let q = query (Proxy :: _ (health :: Health, damage :: Damage))
-      results = runQuery q world
+damageSystem = do
+  -- Query for all entities that can take damage
+  results <- queryFor @(health :: Health, damage :: Damage)
 
-      applyDamage result w =
-        let newHealth = result.components.health.current - result.components.damage.amount
-            updatedHealth = result.components.health { current = newHealth }
-            {world: w', result: _} = runSystem (updateComponent (Proxy :: _ "health") updatedHealth result.entity) w
-        in w'
+  -- Count entities that died this tick (before applying damage)
+  let deadCount = length $ filter (\r -> r.components.health.current <= r.components.damage.amount) results
 
-      deadCount = foldl (\count r -> if r.components.health.current <= r.components.damage.amount then count + 1 else count) 0 results
+  -- Apply damage to each entity
+  for_ results \r -> do
+    let newHealth = r.components.health.current - r.components.damage.amount
+        updatedHealth = r.components.health { current = newHealth }
+    void $ updateComponent (Proxy :: _ "health") updatedHealth r.entity
 
-      world' = foldl (\w r -> applyDamage r w) world results
-  in Tuple deadCount world'
+  pure deadCount
 
 cleanupSystem :: forall w r. System (health :: Health | r) w Int
-cleanupSystem = state \world ->
-  let q = query (Proxy :: _ (health :: Health))
-      results = runQuery q world
-      deadEntities = filter (\r -> r.components.health.current <= 0) results
-      despawnOne result w = despawnEntityPure result.entity w
-      world' = foldl (\w r -> despawnOne r w) world deadEntities
-  in Tuple (foldl (\acc _ -> acc + 1) 0 deadEntities) world'
+cleanupSystem = do
+  -- Query all entities with health
+  results <- queryFor @(health :: Health)
+
+  -- Filter to only dead entities
+  let deadEntities = filter (\r -> r.components.health.current <= 0) results
+
+  -- Despawn each dead entity
+  for_ deadEntities \r -> do
+    despawnEntity r.entity
+
+  pure $ length deadEntities
 
 -- ============================================================================
 -- Rendering

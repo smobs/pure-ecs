@@ -185,9 +185,9 @@ For questions about any ticket, refer to:
 
 Track implementation status here:
 
-- [ ] #01 - Type-Directed Query API
+- [x] #01 - Type-Directed Query API
 - [ ] #03 - updateComponent_ Variant
-- [ ] #04 - Fix Examples Monadic API
+- [x] #04 - Fix Examples Monadic API
 - [ ] #05 - modifyComponent Helper
 - [ ] #06 - Optimize Archetype Storage
 - [ ] #07 - RWSystem Type Alias
