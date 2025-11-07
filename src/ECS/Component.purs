@@ -18,7 +18,7 @@ module ECS.Component
   , with
   , (<+>)
   -- Component pairing for elegant syntax
-  , ComponentPair
+  , ComponentPair(..)
   , (:=)
   -- Pure versions (for internal use)
   , addComponentPure
