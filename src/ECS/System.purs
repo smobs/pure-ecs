@@ -27,7 +27,7 @@ import ECS.Query as ECSQuery
 import ECS.World (World, Entity)
 import Prim.Row (class Union, class Cons, class Lacks)
 import Prim.RowList (class RowToList)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 import Type.Data.Symbol (class IsSymbol)
 
 -- | System is a State monad over World with phantom type access tracking.
