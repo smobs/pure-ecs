@@ -8,9 +8,7 @@ Pure functional Entity Component System with row-polymorphic type safety.
 import Control.Monad.State (execState)
 import ECS.World (emptyWorld, spawnEntity)
 import ECS.Component ((<+>), (:=))
-import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
-import ECS.System as S
+import ECS.System (System, runSystem, updateComponent, queryFor)
 import Type.Proxy (Proxy(..))
 
 -- Define components
@@ -28,7 +26,7 @@ let world = execState (
 -- Create system using State monad
     moveSystem :: System (position :: Position, velocity :: Velocity) (position :: Position) Unit
     moveSystem = do
-      results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+      results <- queryFor @(position :: Position, velocity :: Velocity)
       for_ results \r -> do
         void $ updateComponent (Proxy :: _ "position") newPos r.entity
       -- Type-safe access: r.components.position
@@ -99,15 +97,15 @@ let q = query (Proxy :: _ (position :: Position))
 - Enables future parallel execution analysis
 - System composition via do-notation (automatic sequencing)
 
-**Key functions**: `runSystem`, `query`, `updateComponent`
+**Key functions**: `runSystem`, `queryFor`, `updateComponent`
 
 **API Pattern**: Systems are State monad computations that query entities and update components:
 ```purescript
 -- Run system with runSystem
 let {world: w', result: value} = runSystem mySystem world
 
--- Query within system
-results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+-- Query within system (recommended)
+results <- queryFor @(position :: Position, velocity :: Velocity)
 
 -- Update components
 entity' <- updateComponent (Proxy :: _ "position") newPos entity
@@ -206,11 +204,13 @@ let world' = execState buildEntity emptyWorld
 ### Writing Systems
 ```purescript
 -- State monad approach (current API)
+import ECS.System (System, runSystem, updateComponent, queryFor)
+
 movementSystem :: Number -> System (position :: Position, velocity :: Velocity)
                                      (position :: Position)
                                      Int
 movementSystem dt = do
-  results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+  results <- queryFor @(position :: Position, velocity :: Velocity)
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
@@ -219,6 +219,7 @@ movementSystem dt = do
 
 -- Manual state pattern (for inline systems)
 import Control.Monad.State as CMS
+import ECS.Query (query, runQuery)
 
 simpleSystem :: System (position :: Position) () Unit
 simpleSystem = CMS.state \world ->
@@ -273,9 +274,7 @@ dependencies:
 ```purescript
 import ECS.World (World, emptyWorld, spawnEntity)
 import ECS.Component (addComponent, getComponent)
-import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
-import ECS.System as S
+import ECS.System (System, runSystem, updateComponent, queryFor)
 ```
 
 ### Incremental Adoption
@@ -363,9 +362,7 @@ import Prelude
 import Control.Monad.State (execState)
 import ECS.World as ECS
 import ECS.Component ((<+>), (:=))
-import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
-import ECS.System as S
+import ECS.System (System, runSystem, updateComponent, queryFor)
 import Type.Proxy (Proxy(..))
 import Data.Traversable (for_)
 
@@ -384,7 +381,7 @@ setupWorld = execState setupEntities ECS.emptyWorld
 -- 3. Create system using State monad
 moveSystem :: Number -> System (position :: Position, velocity :: Velocity) (position :: Position) Unit
 moveSystem dt = do
-  results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+  results <- queryFor @(position :: Position, velocity :: Velocity)
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
@@ -477,14 +474,13 @@ mySystem = mkSystem \world ->
 composed = composeSystem sys1 sys2
 ```
 
-### New API (2.0):
+### New API (2.0+):
 ```purescript
-import ECS.System (System, runSystem, updateComponent)
-import ECS.System as S
+import ECS.System (System, runSystem, updateComponent, queryFor)
 
 mySystem :: System (position :: Position) (position :: Position) Unit
 mySystem = do
-  results <- S.query $ query (Proxy :: _ (position :: Position))
+  results <- queryFor @(position :: Position)
   for_ results \r -> do
     void $ updateComponent (Proxy :: _ "position") newPos r.entity
 
@@ -496,7 +492,7 @@ composed = do
 
 ### Migration Steps:
 1. Replace `mkSystem \world -> {world, result}` with `do` notation or `state \w -> Tuple result w`
-2. Replace `runQuery q world` with `results <- S.query $ query (Proxy :: _ (...))`
+2. Replace `runQuery q world` with `results <- queryFor @(...)`
 3. Replace `composeSystem sys1 sys2` with `do { sys1; sys2 }`
-4. Add qualified import: `import ECS.System as S`
+4. Import `queryFor` from `ECS.System`
 5. For inline systems, use: `import Control.Monad.State as CMS` and `CMS.state \w -> Tuple result w'`

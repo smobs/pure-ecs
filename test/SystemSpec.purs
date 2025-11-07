@@ -64,7 +64,7 @@ systemSpec = do
 
             querySystem :: System (position :: Position, velocity :: Velocity) () Int
             querySystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
               pure $ length results
 
             { world: _, result } = runSystem querySystem world3
@@ -83,7 +83,7 @@ systemSpec = do
 
             countSystem :: System (position :: Position) () Int
             countSystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position))
+              results <- S.queryFor @(position :: Position)
               pure $ length results
 
             { world: _, result } = runSystem countSystem world6
@@ -193,7 +193,7 @@ systemSpec = do
 
             inspectSystem :: System (position :: Position) () Int
             inspectSystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position))
+              results <- S.queryFor @(position :: Position)
               pure $ length results
 
             { world: _, result } = runSystem inspectSystem world2
@@ -209,7 +209,7 @@ systemSpec = do
 
             countLiving :: System (health :: Health) () Int
             countLiving = do
-              results <- S.query $ query (Proxy :: _ (health :: Health))
+              results <- S.queryFor @(health :: Health)
               let living = filter (\r -> r.components.health.current > 0) results
               pure $ length living
 
@@ -228,7 +228,7 @@ systemSpec = do
                                  (position :: Position)
                                  Unit
             moveSystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
               for_ results \r -> do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
@@ -255,7 +255,7 @@ systemSpec = do
                                  (position :: Position)
                                  Unit
             moveSystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
               for_ results \r -> do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
@@ -282,7 +282,7 @@ systemSpec = do
 
             sumHealth :: System (health :: Health) () Int
             sumHealth = do
-              results <- S.query $ query (Proxy :: _ (health :: Health))
+              results <- S.queryFor @(health :: Health)
               pure $ foldl (\acc r -> acc + r.components.health.current) 0 results
 
             { world: _, result } = runSystem sumHealth world6
@@ -302,7 +302,7 @@ systemSpec = do
 
             healLowHealth :: System (health :: Health) (health :: Health) Unit
             healLowHealth = do
-              results <- S.query $ query (Proxy :: _ (health :: Health))
+              results <- S.queryFor @(health :: Health)
               let filtered = filter (\r -> r.components.health.current < 50) results
               for_ filtered \r -> do
                 void $ updateComponent (Proxy :: _ "health") { current: 100, max: 100 } r.entity
@@ -334,7 +334,7 @@ systemSpec = do
                                  (position :: Position)
                                  Unit
             moveSystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
               for_ results \r -> do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
@@ -367,7 +367,7 @@ systemSpec = do
 
             querySystem :: System (position :: Position) () Int
             querySystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position))
+              results <- S.queryFor @(position :: Position)
               pure $ length results
 
             { world: _, result } = runSystem querySystem world2
@@ -422,7 +422,7 @@ systemSpec = do
                                   (position :: Position)
                                   Unit
             moveSystem = do
-              results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+              results <- S.queryFor @(position :: Position, velocity :: Velocity)
               for_ results \r -> do
                 let newPos = { x: r.components.position.x + r.components.velocity.x
                              , y: r.components.position.y + r.components.velocity.y
