@@ -202,9 +202,11 @@ let world' = execState buildEntity emptyWorld
 ```
 
 ### Writing Systems
+
+**Recommended pattern** (use this 99% of the time):
 ```purescript
--- State monad approach (current API)
 import ECS.System (System, runSystem, updateComponent, queryFor)
+import Data.Traversable (for_)
 
 movementSystem :: Number -> System (position :: Position, velocity :: Velocity)
                                      (position :: Position)
@@ -216,15 +218,19 @@ movementSystem dt = do
                  ,y: r.components.position.y + r.components.velocity.y * dt}
     void $ updateComponent (Proxy :: _ "position") newPos r.entity
   pure $ length results
+```
 
--- Manual state pattern (for inline systems)
+**Advanced pattern** (rarely needed - avoid unless you have a specific reason):
+```purescript
 import Control.Monad.State as CMS
 import ECS.Query (query, runQuery)
 
-simpleSystem :: System (position :: Position) () Unit
-simpleSystem = CMS.state \world ->
+-- Only use manual state pattern when you need low-level world access
+-- For normal systems, use do-notation above!
+advancedSystem :: System (position :: Position) () Unit
+advancedSystem = CMS.state \world ->
   let results = runQuery (query (Proxy :: _ (position :: Position))) world
-      -- ... manual world manipulation ...
+      -- ... complex manual world manipulation ...
   in Tuple unit world'
 ```
 

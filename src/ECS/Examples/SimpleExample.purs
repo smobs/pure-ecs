@@ -23,13 +23,12 @@ module ECS.Examples.SimpleExample where
 
 import Prelude
 
-import Control.Monad.State (State, state, execState)
-import Data.Array (foldl, filter)
-import Data.Tuple (Tuple(..))
+import Control.Monad.State (State, execState)
+import Data.Array (filter, length)
+import Data.Traversable (for_)
 import ECS.Component ((<+>), (:=))
-import ECS.Query (query, runQuery)
-import ECS.System (System, runSystem, updateComponent)
-import ECS.World (World, emptyWorld, spawnEntity, despawnEntityPure)
+import ECS.System (System, runSystem, queryFor, updateComponent)
+import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
 import Effect (Effect)
 import Effect.Console (log)
 import Type.Proxy (Proxy(..))
@@ -65,22 +64,18 @@ type Damage = { amount :: Int }
 physicsSystem :: forall w r. Number -> System (position :: Position, velocity :: Velocity | r)
                                    (position :: Position | w)
                                    Int
-physicsSystem dt = state \world ->
-  let -- Query for all moving entities
-      q = query (Proxy :: _ (position :: Position, velocity :: Velocity))
-      results = runQuery q world
+physicsSystem dt = do
+  -- Query for all moving entities
+  results <- queryFor @(position :: Position, velocity :: Velocity)
 
-      -- Update each entity's position
-      updatePosition result w =
-        let newPos = { x: result.components.position.x + result.components.velocity.x * dt
-                     , y: result.components.position.y + result.components.velocity.y * dt
-                     }
-            {world: w', result: _} = runSystem (updateComponent (Proxy :: _ "position") newPos result.entity) w
-        in w'
+  -- Update each entity's position
+  for_ results \r -> do
+    let newPos = { x: r.components.position.x + r.components.velocity.x * dt
+                 , y: r.components.position.y + r.components.velocity.y * dt
+                 }
+    void $ updateComponent (Proxy :: _ "position") newPos r.entity
 
-      -- Apply updates to all results
-      world' = foldl (\w r -> updatePosition r w) world results
-  in Tuple (foldl (\acc _ -> acc + 1) 0 results) world'
+  pure $ length results
 
 -- | **Damage System**: Applies damage to entities with health
 -- |
@@ -93,23 +88,20 @@ physicsSystem dt = state \world ->
 damageSystem :: forall w r. System (health :: Health, damage :: Damage | r)
                        (health :: Health | w)
                        Int
-damageSystem = state \world ->
-  let -- Query for all entities that can take damage
-      q = query (Proxy :: _ (health :: Health, damage :: Damage))
-      results = runQuery q world
+damageSystem = do
+  -- Query for all entities that can take damage
+  results <- queryFor @(health :: Health, damage :: Damage)
 
-      -- Apply damage to each entity
-      applyDamage result w =
-        let newHealth = result.components.health.current - result.components.damage.amount
-            updatedHealth = result.components.health { current = newHealth }
-            {world: w', result: _} = runSystem (updateComponent (Proxy :: _ "health") updatedHealth result.entity) w
-        in w'
+  -- Count entities that died this tick (before applying damage)
+  let deadCount = length $ filter (\r -> r.components.health.current <= r.components.damage.amount) results
 
-      -- Count entities that died this tick
-      deadCount = foldl (\count r -> if r.components.health.current <= r.components.damage.amount then count + 1 else count) 0 results
- 
-      world' = foldl (\w r -> applyDamage r w) world results
-  in Tuple deadCount world'
+  -- Apply damage to each entity
+  for_ results \r -> do
+    let newHealth = r.components.health.current - r.components.damage.amount
+        updatedHealth = r.components.health { current = newHealth }
+    void $ updateComponent (Proxy :: _ "health") updatedHealth r.entity
+
+  pure deadCount
 
 -- | **Cleanup System**: Despawns entities with health <= 0
 -- |
@@ -120,19 +112,18 @@ damageSystem = state \world ->
 -- | This system queries for entities with health components,
 -- | checks if they're dead (health <= 0), and despawns them.
 cleanupSystem :: forall w r. System (health :: Health | r) w Int
-cleanupSystem = state \world ->
-  let -- Query all entities with health
-      q = query (Proxy :: _ (health :: Health))
-      results = runQuery q world
+cleanupSystem = do
+  -- Query all entities with health
+  results <- queryFor @(health :: Health)
 
-      -- Filter to only dead entities
-      deadEntities = filter (\r -> r.components.health.current <= 0) results
+  -- Filter to only dead entities
+  let deadEntities = filter (\r -> r.components.health.current <= 0) results
 
-      -- Despawn each dead entity
-      despawnOne result w = despawnEntityPure result.entity w
+  -- Despawn each dead entity
+  for_ deadEntities \r -> do
+    despawnEntity r.entity
 
-      world' = foldl (\w r -> despawnOne r w) world deadEntities
-  in Tuple (foldl (\acc _ -> acc + 1) 0 deadEntities) world'
+  pure $ length deadEntities
 
 -- ============================================================================
 -- World Setup
