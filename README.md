@@ -48,9 +48,7 @@ import Effect (Effect)
 import Effect.Console (log)
 import ECS.World (World, emptyWorld, spawnEntity)
 import ECS.Component ((<+>), (:=))
-import ECS.Query (query)
-import ECS.System (System, runSystem, updateComponent)
-import ECS.System as S
+import ECS.System (System, runSystem, updateComponent, queryFor)
 import Type.Proxy (Proxy(..))
 
 -- Define components
@@ -66,7 +64,7 @@ setupWorld =
 -- Query and update system
 physicsSystem :: System (position :: Position, velocity :: Velocity) (position :: Position) Unit
 physicsSystem = do
-  results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+  results <- queryFor @(position :: Position, velocity :: Velocity)
   for_ results \r -> do
     let newPos = { x: r.components.position.x + r.components.velocity.dx
                  , y: r.components.position.y + r.components.velocity.dy }

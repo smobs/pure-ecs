@@ -14,6 +14,7 @@ module ECS.System
   ( System
   , runSystem
   , query
+  , queryFor
   , updateComponent
   ) where
 
@@ -22,10 +23,11 @@ import Data.Tuple (Tuple(..))
 import ECS.Component (addComponentPure, removeComponentPure)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)
 import ECS.Query (runQuery) as Q
+import ECS.Query as ECSQuery
 import ECS.World (World, Entity)
 import Prim.Row (class Union, class Cons, class Lacks)
 import Prim.RowList (class RowToList)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 import Type.Data.Symbol (class IsSymbol)
 
 -- | System is a State monad over World with phantom type access tracking.
@@ -87,6 +89,37 @@ query :: forall required excluded reads writes extra rl.
   System reads writes (Array (QueryResult required))
 query q = state \world ->
   Tuple (Q.runQuery q world) world
+
+-- | Type-directed query - the recommended way to query entities in systems.
+-- |
+-- | This is a convenience function that combines ECS.Query.query and System.query
+-- | into a single call, eliminating the confusing double-query pattern.
+-- |
+-- | Uses visible type applications for clean syntax - pass the component row type
+-- | with @ syntax.
+-- |
+-- | Type constraint ensures queried components are in the read set:
+-- | - Union required extra reads: Proves required ⊆ reads
+-- |
+-- | Example (recommended pattern):
+-- | ```purescript
+-- | mySystem = do
+-- |   results <- queryFor @(position :: Position, velocity :: Velocity)
+-- |   -- process results...
+-- | ```
+-- |
+-- | This replaces the old pattern:
+-- | ```purescript
+-- | results <- S.query $ query (Proxy :: _ (position :: Position, velocity :: Velocity))
+-- | ```
+queryFor :: forall @required reads writes extra rl.
+  RowToList required rl =>
+  ExtractLabels rl =>
+  ReadComponents rl required =>
+  Union required extra reads =>
+  System reads writes (Array (QueryResult required))
+queryFor = state \world ->
+  Tuple (Q.runQuery (ECSQuery.query (Proxy :: Proxy required)) world) world
 
 -- | Update a component within a system.
 -- |
