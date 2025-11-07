@@ -17,6 +17,9 @@ module ECS.Component
   -- Chaining combinator
   , with
   , (<+>)
+  -- Component pairing for elegant syntax
+  , ComponentPair
+  , (:=)
   -- Pure versions (for internal use)
   , addComponentPure
   , removeComponentPure
@@ -70,6 +73,26 @@ addComponent labelProxy componentValue entity = state \world ->
   let result = addComponentPure labelProxy componentValue entity world
   in Tuple result.entity result.world
 
+-- | Component label-value pair for elegant chaining syntax.
+-- |
+-- | Used with the `:=` operator to create readable component additions:
+-- | ```purescript
+-- | entity <- spawnEntity
+-- |   <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- |   <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
+-- | ```
+data ComponentPair label a = ComponentPair (Proxy label) a
+
+-- | Infix operator for pairing component label with value.
+-- |
+-- | Reads naturally: "position has value {x: 0.0, y: 0.0}"
+-- |
+-- | Example:
+-- | ```purescript
+-- | (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- | ```
+infixr 6 ComponentPair as :=
+
 -- | Chaining combinator for adding components without manual entity threading.
 -- |
 -- | This combinator prevents stale entity reference bugs by automatically
@@ -78,9 +101,9 @@ addComponent labelProxy componentValue entity = state \world ->
 -- | Example:
 -- | ```purescript
 -- | entity <- spawnEntity
--- |   <+> (Proxy :: _ "position", {x: 0.0, y: 0.0})
--- |   <+> (Proxy :: _ "velocity", {x: 1.0, y: 1.0})
--- |   <+> (Proxy :: _ "health", {current: 100, max: 100})
+-- |   <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- |   <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
+-- |   <+> (Proxy :: _ "health") := {current: 100, max: 100}
 -- | ```
 -- |
 -- | This is equivalent to:
@@ -97,9 +120,9 @@ with :: forall r r' label a.
   Lacks label r =>
   Cons label a r r' =>
   State World (Entity r) ->
-  Tuple (Proxy label) a ->
+  ComponentPair label a ->
   State World (Entity r')
-with entityAction (Tuple proxy value) = do
+with entityAction (ComponentPair proxy value) = do
   entity <- entityAction
   addComponent proxy value entity
 

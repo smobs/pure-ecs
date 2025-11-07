@@ -15,8 +15,8 @@
 -- | setupWorld :: WorldM (Entity (position :: Position, velocity :: Velocity))
 -- | setupWorld =
 -- |   spawnEntity
--- |     <+> Tuple (Proxy :: _ "position") {x: 0.0, y: 0.0}
--- |     <+> Tuple (Proxy :: _ "velocity") {x: 1.0, y: 1.0}
+-- |     <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+-- |     <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
 -- |
 -- | let world = execWorld setupWorld emptyWorld
 -- | ```
@@ -55,7 +55,7 @@ type WorldM a = State World a
 -- | Example:
 -- | ```purescript
 -- | let Tuple entity finalWorld = runWorld
--- |       (spawnEntity <+> Tuple (Proxy :: _ "position") {x: 0.0, y: 0.0})
+-- |       (spawnEntity <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0})
 -- |       emptyWorld
 -- | ```
 runWorld :: forall a. WorldM a -> World -> Tuple a World
@@ -68,7 +68,7 @@ runWorld = runState
 -- | Example:
 -- | ```purescript
 -- | let world = execWorld
--- |       (spawnEntity <+> Tuple (Proxy :: _ "position") {x: 0.0, y: 0.0})
+-- |       (spawnEntity <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0})
 -- |       emptyWorld
 -- | ```
 execWorld :: forall a. WorldM a -> World -> World

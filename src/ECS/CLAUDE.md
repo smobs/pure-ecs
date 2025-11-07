@@ -6,9 +6,8 @@ Pure functional Entity Component System with row-polymorphic type safety.
 
 ```purescript
 import Control.Monad.State (execState)
-import Data.Tuple (Tuple(..))
 import ECS.World (emptyWorld, spawnEntity)
-import ECS.Component ((<+>))
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.System as S
@@ -21,8 +20,8 @@ type Velocity = { x :: Number, y :: Number }
 -- Create world and spawn entity using chaining combinator (impossible to use stale reference!)
 let world = execState (
       spawnEntity
-        <+> Tuple (Proxy :: _ "position") {x: 0.0, y: 0.0}
-        <+> Tuple (Proxy :: _ "velocity") {x: 1.0, y: 1.0}
+        <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+        <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
       -- Entity type: Entity (position :: Position, velocity :: Velocity)
     ) emptyWorld
 
@@ -71,8 +70,8 @@ Use `removeComponent` then `addComponent`, or use System's `updateComponent` hel
 **Chaining Pattern**: Use the `<+>` combinator to add components without manual entity threading:
 ```purescript
 entity <- spawnEntity
-  <+> Tuple (Proxy :: _ "position") {x: 0.0, y: 0.0}
-  <+> Tuple (Proxy :: _ "velocity") {x: 1.0, y: 1.0}
+  <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+  <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
 -- Impossible to accidentally use wrong intermediate entity!
 ```
 
@@ -194,9 +193,9 @@ class ExtractLabels (rl :: RowList Type) where ...
 -- Chaining combinator prevents stale entity reference bugs
 buildEntity =
   spawnEntity
-    <+> Tuple (Proxy :: _ "position") pos
-    <+> Tuple (Proxy :: _ "velocity") vel
-    <+> Tuple (Proxy :: _ "health") hp
+    <+> (Proxy :: _ "position") := pos
+    <+> (Proxy :: _ "velocity") := vel
+    <+> (Proxy :: _ "health") := hp
   -- Result type: Entity (position :: Position, velocity :: Velocity, health :: Health)
   -- Impossible to accidentally use wrong intermediate entity!
 
@@ -220,7 +219,6 @@ movementSystem dt = do
 
 -- Manual state pattern (for inline systems)
 import Control.Monad.State as CMS
-import Data.Tuple (Tuple(..))
 
 simpleSystem :: System (position :: Position) () Unit
 simpleSystem = CMS.state \world ->
@@ -363,9 +361,8 @@ module Game where
 
 import Prelude
 import Control.Monad.State (execState)
-import Data.Tuple (Tuple(..))
 import ECS.World as ECS
-import ECS.Component ((<+>))
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.System as S
@@ -381,8 +378,8 @@ setupWorld = execState setupEntities ECS.emptyWorld
   where
     setupEntities =
       ECS.spawnEntity
-        <+> Tuple (Proxy :: _ "position") {x: 0.0, y: 0.0}
-        <+> Tuple (Proxy :: _ "velocity") {x: 1.0, y: 1.0}
+        <+> (Proxy :: _ "position") := {x: 0.0, y: 0.0}
+        <+> (Proxy :: _ "velocity") := {x: 1.0, y: 1.0}
 
 -- 3. Create system using State monad
 moveSystem :: Number -> System (position :: Position, velocity :: Velocity) (position :: Position) Unit
@@ -424,15 +421,15 @@ let world' = execState (do
 ```purescript
 let world' = execState (
       spawnEntity
-        <+> Tuple (Proxy :: _ "position") pos
-        <+> Tuple (Proxy :: _ "velocity") vel
+        <+> (Proxy :: _ "position") := pos
+        <+> (Proxy :: _ "velocity") := vel
       -- Impossible to use wrong entity reference!
     ) world
 ```
 
 ### Migration Steps:
-1. Import `(<+>)` from `ECS.Component` and `Tuple` from `Data.Tuple`
+1. Import `(<+>)` and `(:=)` from `ECS.Component`
 2. Replace manual entity threading (`e1 <- ...; e2 <- addComponent ... e1`) with chaining
-3. Wrap component label and value in `Tuple (Proxy :: _ "label") value`
+3. Wrap component label and value in `(Proxy :: _ "label") := value`
 4. Remove intermediate entity bindings (e1, e2, e3, etc.)
 5. Old API still available for cases requiring conditional logic

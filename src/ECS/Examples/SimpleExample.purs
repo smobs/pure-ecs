@@ -26,7 +26,7 @@ import Prelude
 import Control.Monad.State (State, state, execState)
 import Data.Array (foldl, filter)
 import Data.Tuple (Tuple(..))
-import ECS.Component ((<+>))
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query, runQuery)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.World (World, emptyWorld, spawnEntity, despawnEntityPure)
@@ -149,22 +149,22 @@ setupWorld = execState setupEntities emptyWorld
     setupEntities = do
       -- Entity 1: Moving, with health and damage (position, velocity, health, damage)
       void $ spawnEntity
-        <+> Tuple (Proxy :: _ "position") { x: 0.0, y: 0.0 }
-        <+> Tuple (Proxy :: _ "velocity") { x: 1.0, y: 0.5 }
-        <+> Tuple (Proxy :: _ "health") { current: 50, max: 100 }
-        <+> Tuple (Proxy :: _ "damage") { amount: 15 }
+        <+> (Proxy :: _ "position") := { x: 0.0, y: 0.0 }
+        <+> (Proxy :: _ "velocity") := { x: 1.0, y: 0.5 }
+        <+> (Proxy :: _ "health") := { current: 50, max: 100 }
+        <+> (Proxy :: _ "damage") := { amount: 15 }
 
       -- Entity 2: Moving, no damage (position, velocity, health)
       void $ spawnEntity
-        <+> Tuple (Proxy :: _ "position") { x: 10.0, y: 5.0 }
-        <+> Tuple (Proxy :: _ "velocity") { x: -0.5, y: 1.0 }
-        <+> Tuple (Proxy :: _ "health") { current: 100, max: 100 }
+        <+> (Proxy :: _ "position") := { x: 10.0, y: 5.0 }
+        <+> (Proxy :: _ "velocity") := { x: -0.5, y: 1.0 }
+        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
 
       -- Entity 3: Stationary with damage (position, health, damage)
       void $ spawnEntity
-        <+> Tuple (Proxy :: _ "position") { x: 5.0, y: 5.0 }
-        <+> Tuple (Proxy :: _ "health") { current: 30, max: 100 }
-        <+> Tuple (Proxy :: _ "damage") { amount: 20 }
+        <+> (Proxy :: _ "position") := { x: 5.0, y: 5.0 }
+        <+> (Proxy :: _ "health") := { current: 30, max: 100 }
+        <+> (Proxy :: _ "damage") := { amount: 20 }
 
 -- ============================================================================
 -- Game Loop

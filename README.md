@@ -44,11 +44,10 @@ module Main where
 import Prelude
 import Control.Monad.State (execState)
 import Data.Traversable (for_)
-import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Console (log)
 import ECS.World (World, emptyWorld, spawnEntity)
-import ECS.Component ((<+>))
+import ECS.Component ((<+>), (:=))
 import ECS.Query (query)
 import ECS.System (System, runSystem, updateComponent)
 import ECS.System as S
@@ -61,8 +60,8 @@ type Velocity = { dx :: Number, dy :: Number }
 -- Create entities using chaining combinator (impossible to use stale reference!)
 setupWorld =
   void $ spawnEntity
-    <+> Tuple (Proxy :: _ "position") { x: 0.0, y: 0.0 }
-    <+> Tuple (Proxy :: _ "velocity") { dx: 1.0, dy: 0.5 }
+    <+> (Proxy :: _ "position") := { x: 0.0, y: 0.0 }
+    <+> (Proxy :: _ "velocity") := { dx: 1.0, dy: 0.5 }
 
 -- Query and update system
 physicsSystem :: System (position :: Position, velocity :: Velocity) (position :: Position) Unit
