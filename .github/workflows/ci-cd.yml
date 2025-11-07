@@ -1,8 +1,10 @@
-name: Deploy Demo to GitHub Pages
+name: CI/CD
 
 on:
   push:
     branches: [main, claude/**]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,20 +17,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20.x'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
-
-      - name: Install dependencies (includes PureScript and Spago)
-        run: npm install
 
       - name: Cache Spago dependencies
         uses: actions/cache@v4
@@ -36,30 +39,40 @@ jobs:
           path: |
             .spago
             output
-          key: ${{ runner.os }}-spago-demo-${{ hashFiles('spago.yaml') }}
+          key: ${{ runner.os }}-spago-${{ hashFiles('spago.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-spago-demo-
+            ${{ runner.os }}-spago-
 
-      - name: Build PureScript
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
         run: npm run build
 
+      - name: Run tests
+        run: npm test
+
+      - name: Generate documentation
+        run: npm run docs
+
       - name: Bundle demo with esbuild
+        if: github.event_name == 'workflow_dispatch'
         run: node build-demo.js
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
       - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs
 
   deploy:
+    # Only deploy when manually triggered (from any branch)
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-and-test
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
