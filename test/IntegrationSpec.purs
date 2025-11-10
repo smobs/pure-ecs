@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import ECS.Component (addComponentPure, getComponentPure, hasComponent, removeComponentPure)
 import ECS.Entity (entityIndex)
 import ECS.Query (query, runQuery, without)
-import ECS.System (System, runSystem, updateComponent)
+import ECS.System (System, runSystem, updateComponent, updateComponent_, modifyComponent_)
 import ECS.World (emptyWorld, spawnEntityPure, despawnEntityPure, unEntity)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -50,8 +50,7 @@ integrationSpec = do
             -- Update component via system
             updateSys :: System (position :: Position) (position :: Position) Unit
             updateSys = do
-              void $ updateComponent (Proxy :: _ "position") { x: 10.0, y: 10.0 } entity4
-              pure unit
+              updateComponent_ (Proxy :: _ "position") { x: 10.0, y: 10.0 } entity4
 
             {world: world5, result: _} = runSystem updateSys world4
 
@@ -160,7 +159,7 @@ integrationSpec = do
               let q = query (Proxy :: _ (health :: Health))
                   results = runQuery q w
                   heal r world =
-                    let {world: w', result: _} = runSystem (updateComponent (Proxy :: _ "health") { current: 100, max: 100 } r.entity) world
+                    let {world: w', result: _} = runSystem (updateComponent_ (Proxy :: _ "health") { current: 100, max: 100 } r.entity) world
                     in w'
                   w' = foldl (\acc r -> heal r acc) w results
               in Tuple unit w'
@@ -229,9 +228,8 @@ integrationSpec = do
               let q = query (Proxy :: _ (health :: Health, damage :: Damage))
                   results = runQuery q w
                   apply r world =
-                    let newHealth = r.components.health.current - r.components.damage.amount
-                        h' = r.components.health { current = newHealth }
-                        {world: w', result: _} = runSystem (updateComponent (Proxy :: _ "health") h' r.entity) world
+                    let damageAmount = r.components.damage.amount
+                        {world: w', result: _} = runSystem (modifyComponent_ (Proxy :: _ "health") (\h -> h { current = h.current - damageAmount }) r.entity) world
                     in w'
                   w' = foldl (\acc r -> apply r acc) w results
               in Tuple (length results) w'

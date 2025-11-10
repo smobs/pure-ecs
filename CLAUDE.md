@@ -97,7 +97,7 @@ let q = query (Proxy :: _ (position :: Position))
 - Enables future parallel execution analysis
 - System composition via do-notation (automatic sequencing)
 
-**Key functions**: `runSystem`, `queryFor`, `updateComponent`
+**Key functions**: `runSystem`, `queryFor`, `updateComponent`, `updateComponent_`, `modifyComponent`, `modifyComponent_`
 
 **API Pattern**: Systems are State monad computations that query entities and update components:
 ```purescript
@@ -107,8 +107,13 @@ let {world: w', result: value} = runSystem mySystem world
 -- Query within system (recommended)
 results <- queryFor @(position :: Position, velocity :: Velocity)
 
--- Update components
+-- Update components (set new value)
 entity' <- updateComponent (Proxy :: _ "position") newPos entity
+updateComponent_ (Proxy :: _ "position") newPos entity  -- Fire-and-forget
+
+-- Modify components (transform existing value)
+entity' <- modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
+modifyComponent_ (Proxy :: _ "position") (_ { x = _ + 1.0 }) entity  -- Fire-and-forget
 
 -- Compose systems with do-notation
 combinedSystem = do
@@ -205,7 +210,7 @@ let world' = execState buildEntity emptyWorld
 
 **Recommended pattern** (use this 99% of the time):
 ```purescript
-import ECS.System (System, runSystem, updateComponent, queryFor)
+import ECS.System (System, runSystem, updateComponent_, queryFor)
 import Data.Traversable (for_)
 
 movementSystem :: Number -> System (position :: Position, velocity :: Velocity)
@@ -216,7 +221,7 @@ movementSystem dt = do
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
   pure $ length results
 ```
 
@@ -232,6 +237,65 @@ advancedSystem = CMS.state \world ->
   let results = runQuery (query (Proxy :: _ (position :: Position))) world
       -- ... complex manual world manipulation ...
   in Tuple unit world'
+```
+
+### Modifying Components
+
+**Updating vs. Modifying**:
+```purescript
+-- Direct update - when you have the new value
+updateComponent (Proxy :: _ "position") {x: 10.0, y: 20.0} entity
+
+-- Fire-and-forget update - when you don't need the entity back
+updateComponent_ (Proxy :: _ "position") {x: 10.0, y: 20.0} entity
+
+-- Modify - when you need to transform the existing value
+modifyComponent (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
+
+-- Fire-and-forget modify - cleanest for loops
+modifyComponent_ (Proxy :: _ "position") (\p -> p { x = p.x + 1.0 }) entity
+```
+
+**Read-modify-write pattern**:
+```purescript
+-- Apply a function to a component value
+modifyComponent (Proxy :: _ "position") (\pos -> pos { x = pos.x + velocity.x }) entity
+
+-- With PureScript's record update syntax (cleanest!)
+modifyComponent (Proxy :: _ "position") (_ { x = _ + velocity.x }) entity
+
+-- Fire-and-forget variant (no rebinding needed)
+modifyComponent_ (Proxy :: _ "health") (_ { current = _ - damage }) entity
+```
+
+**When to use each**:
+
+| Operation | Use Case | Example |
+|-----------|----------|---------|
+| `updateComponent` | Setting new value, need entity back | `e' <- updateComponent proxy newVal e` |
+| `updateComponent_` | Setting new value, fire-and-forget | `updateComponent_ proxy newVal e` |
+| `modifyComponent` | Transforming value, need entity back | `e' <- modifyComponent proxy (\v -> v + 1) e` |
+| `modifyComponent_` | Transforming value, fire-and-forget | `modifyComponent_ proxy (_ + 1) e` |
+
+**Real-world examples**:
+```purescript
+-- Incrementing/decrementing values
+modifyComponent_ (Proxy :: _ "score") (_ + points) entity
+
+-- Applying damage
+modifyComponent_ (Proxy :: _ "health") (\h -> h { current = h.current - 25 }) entity
+
+-- Physics update (cleanest approach)
+movementSystem :: Number -> System (position :: Position, velocity :: Velocity)
+                                   (position :: Position)
+                                   Unit
+movementSystem dt = do
+  results <- queryFor @(position :: Position, velocity :: Velocity)
+  for_ results \r -> do
+    modifyComponent_ (Proxy :: _ "position")
+      (\p -> { x: p.x + r.components.velocity.x * dt
+             , y: p.y + r.components.velocity.y * dt })
+      r.entity
 ```
 
 ### Composing Systems
@@ -391,7 +455,7 @@ moveSystem dt = do
   for_ results \r -> do
     let newPos = {x: r.components.position.x + r.components.velocity.x * dt
                  ,y: r.components.position.y + r.components.velocity.y * dt}
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
 
 -- 4. Run game loop
 main = do
@@ -482,13 +546,13 @@ composed = composeSystem sys1 sys2
 
 ### New API (2.0+):
 ```purescript
-import ECS.System (System, runSystem, updateComponent, queryFor)
+import ECS.System (System, runSystem, updateComponent_, queryFor)
 
 mySystem :: System (position :: Position) (position :: Position) Unit
 mySystem = do
   results <- queryFor @(position :: Position)
   for_ results \r -> do
-    void $ updateComponent (Proxy :: _ "position") newPos r.entity
+    updateComponent_ (Proxy :: _ "position") newPos r.entity
 
 -- Composition via do-notation
 composed = do
