@@ -43,6 +43,8 @@ import Data.Int.Bits (shl, (.&.), (.|.))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, EntityManager, createEntity, deleteEntity, emptyEntityManager, entityIndex, validateEntity)
 import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
@@ -104,6 +106,7 @@ derive newtype instance ordEntity :: Ord (Entity components)
 -- | - entities: Array of EntityIds in this archetype
 -- | - entityPositions: Map from entity index to position in entities array (O(log N) lookup)
 -- | - mask: Bitmask of component types for O(1) query matching
+-- | - labels: Cached set of component labels (avoids reparsing archetype ID)
 -- | - storage: Component label -> Array Foreign (component values)
 -- |
 -- | Type safety is enforced at the Entity level via phantom row types,
@@ -112,6 +115,7 @@ type Archetype =
   { entities :: Array EntityId
   , entityPositions :: Map Int Int  -- entityIndex -> position in entities array
   , mask :: ComponentMask           -- Bitmask for fast query matching
+  , labels :: Set String            -- Cached component labels
   , storage :: ComponentStorage
   }
 
@@ -283,7 +287,8 @@ despawnEntityPure (Entity entityId) world =
                       in
                         { entities: result.entities
                         , entityPositions: result.positions
-                        , mask: arch.mask  -- Mask stays the same
+                        , mask: arch.mask    -- Mask stays the same
+                        , labels: arch.labels  -- Labels stay the same
                         , storage: updatedStorage
                         }
 
@@ -328,7 +333,7 @@ getOrCreateEmptyArchetype :: Map ArchetypeId Archetype -> Archetype
 getOrCreateEmptyArchetype archetypes =
   case Map.lookup emptyArchetypeId archetypes of
     Just arch -> arch
-    Nothing -> { entities: [], entityPositions: Map.empty, mask: 0, storage: CS.empty }
+    Nothing -> { entities: [], entityPositions: Map.empty, mask: 0, labels: Set.empty, storage: CS.empty }
 
 -- | Get the bit position for a component label.
 -- |

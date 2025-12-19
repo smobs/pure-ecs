@@ -327,6 +327,7 @@ gameLoop = do
 - Entity position map: O(log N) lookups instead of O(N) linear search
 - Swap-remove: O(1) array removal instead of O(N) filter
 - Bitmask archetype matching: O(1) per archetype instead of O(C) set operations
+- Cached archetype labels: O(log N) Set lookup instead of O(N) string parsing
 
 **Optimization tips**:
 - Batch entity creation
@@ -494,11 +495,17 @@ This release focuses on performance optimizations. **No code changes required** 
 - Each component type assigned a unique bit position
 - Query matching uses bitwise AND operations instead of Set containment checks
 
+**Cached Archetype Labels** (Phase 1.3):
+- Component existence checks: **O(N) → O(log N)** (N = archetype ID length)
+- Each archetype caches its component labels as a Set
+- Avoids repeated string parsing of archetype IDs
+
 **Before (3.1.0)**:
 ```
 Finding entity in archetype: O(N) linear search via findIndex
 Removing entity: O(N) filter operation
 Query archetype filter: O(C) Set.subset check per archetype
+hasComponent check: O(N) string split + linear search
 ```
 
 **After (3.2.0)**:
@@ -506,6 +513,7 @@ Query archetype filter: O(C) Set.subset check per archetype
 Finding entity in archetype: O(log N) Map.lookup
 Removing entity: O(1) swap-remove + O(log N) map update
 Query archetype filter: O(1) bitmask check per archetype
+hasComponent check: O(log N) Set.member lookup
 ```
 
 ### Impact
@@ -515,6 +523,7 @@ Query archetype filter: O(1) bitmask check per archetype
 | getComponent | O(N) | O(log N) | ~5-10x for large archetypes |
 | removeComponent | O(N) | O(log N) | ~5-10x for large archetypes |
 | despawnEntity | O(N) | O(log N) | ~5-10x for large archetypes |
+| hasComponent | O(N) parse + search | O(log N) Set lookup | ~5-10x faster |
 | Query iteration | O(N) per entity | O(log N) per entity | ~5-10x for large archetypes |
 | Query archetype filter | O(C) per archetype | O(1) per archetype | ~C× faster filtering |
 
@@ -531,6 +540,7 @@ type Archetype =
   { entities :: Array EntityId
   , entityPositions :: Map Int Int  -- NEW: entityIndex -> array position
   , mask :: ComponentMask           -- NEW: bitmask for fast query matching
+  , labels :: Set String            -- NEW: cached component labels
   , storage :: ComponentStorage
   }
 ```
@@ -545,7 +555,7 @@ type World =
   }
 ```
 
-All archetype creation must initialize `entityPositions: Map.empty` and `mask: 0`.
+All archetype creation must initialize `entityPositions: Map.empty`, `mask: 0`, and `labels: Set.empty` (or compute from archetype ID).
 
 ## Migration from 3.0 to 3.1
 

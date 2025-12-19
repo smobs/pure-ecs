@@ -32,6 +32,7 @@ import Control.Monad.State (State, state, get)
 import Data.Array (elem, filter, findIndex, index, length, sort, take, updateAt, (:))
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Set as Set
 import Data.String (Pattern(..), joinWith, split)
 import Data.String.Common (trim)
 import Data.Tuple (Tuple(..))
@@ -364,7 +365,11 @@ hasComponent labelProxy entity world =
   in
     case Map.lookup idx world.entityLocations of
       Nothing -> false
-      Just archId -> archetypeContains labelStr archId
+      Just archId ->
+        -- Use cached labels from archetype (O(log N) Set lookup vs O(N) string parsing)
+        case Map.lookup archId world.archetypes of
+          Just arch -> Set.member labelStr arch.labels
+          Nothing -> archetypeContains labelStr archId  -- Fallback (shouldn't happen)
 
 -- Helper Functions
 
@@ -434,10 +439,13 @@ moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
           Nothing -> CS.empty  -- Entity not found in old archetype
           Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
 
-    -- Filter to only components that exist in new archetype ID
-    newArchLabels = parseArchetypeId newArchId
+    -- Filter to only components that exist in new archetype
+    -- Use cached labels if archetype exists, otherwise compute from ID
+    newArchLabels = case Map.lookup newArchId world.archetypes of
+      Just arch -> arch.labels
+      Nothing -> Set.fromFoldable $ parseArchetypeId newArchId
     filteredComponents = CS.filterKeys (\label ->
-      elem label newArchLabels
+      Set.member label newArchLabels
     ) existingComponents
 
     -- Remove from old archetype
@@ -455,10 +463,16 @@ moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
 addToArchetypeWithAllComponents :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> World -> World
 addToArchetypeWithAllComponents entityId archId newMask allComponents world =
   let
-    -- Get or create archetype
+    -- Get or create archetype (compute labels from ID for new archetypes)
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
-      Nothing -> { entities: [], entityPositions: Map.empty, mask: newMask, storage: CS.empty }
+      Nothing ->
+        { entities: []
+        , entityPositions: Map.empty
+        , mask: newMask
+        , labels: Set.fromFoldable $ parseArchetypeId archId
+        , storage: CS.empty
+        }
 
     -- For each component, append to archetype's component arrays
     updatedStorage = CS.fold (\acc label singletonArray ->
@@ -470,12 +484,13 @@ addToArchetypeWithAllComponents entityId archId newMask allComponents world =
       in CS.insert label updatedArray acc
     ) arch.storage allComponents
 
-    -- Add entity with position tracking (mask is set on creation or preserved)
+    -- Add entity with position tracking (mask and labels are set on creation or preserved)
     newPosition = length arch.entities
     updatedArch =
       { entities: arch.entities <> [entityId]
       , entityPositions: Map.insert (entityIndex entityId) newPosition arch.entityPositions
-      , mask: arch.mask  -- Preserve existing mask
+      , mask: arch.mask      -- Preserve existing mask
+      , labels: arch.labels  -- Preserve existing labels
       , storage: updatedStorage
       }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
@@ -532,11 +547,12 @@ removeFromArchetype entityId archId world =
                 arraySwapRemoveAt pos arr
               ) arch.storage
 
-              -- Update archetype (preserve mask - archetype signature doesn't change)
+              -- Update archetype (preserve mask and labels - archetype signature doesn't change)
               updatedArch =
                 { entities: result.entities
                 , entityPositions: result.positions
-                , mask: arch.mask  -- Mask stays the same
+                , mask: arch.mask      -- Mask stays the same
+                , labels: arch.labels  -- Labels stay the same
                 , storage: updatedStorage
                 }
               updatedArchetypes = Map.insert archId updatedArch world.archetypes
@@ -574,10 +590,16 @@ infixl 8 range as ..
 addToArchetypeWithComponent :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> String -> Foreign -> World -> World
 addToArchetypeWithComponent entityId archId newMask existingComponents newLabel newComponentValue world =
   let
-    -- Get or create archetype with component storage
+    -- Get or create archetype with component storage (compute labels from ID for new archetypes)
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
-      Nothing -> { entities: [], entityPositions: Map.empty, mask: newMask, storage: CS.empty }
+      Nothing ->
+        { entities: []
+        , entityPositions: Map.empty
+        , mask: newMask
+        , labels: Set.fromFoldable $ parseArchetypeId archId
+        , storage: CS.empty
+        }
 
     -- Merge existing components + new component (wrap single value in array)
     allComponents = CS.insert newLabel (CS.arrayFromSingleton newComponentValue) existingComponents
@@ -592,12 +614,13 @@ addToArchetypeWithComponent entityId archId newMask existingComponents newLabel 
       in CS.insert label updatedArray acc
     ) arch.storage allComponents
 
-    -- Add entity with position tracking (mask is set on creation or preserved)
+    -- Add entity with position tracking (mask and labels are set on creation or preserved)
     newPosition = length arch.entities
     updatedArch =
       { entities: arch.entities <> [entityId]
       , entityPositions: Map.insert (entityIndex entityId) newPosition arch.entityPositions
-      , mask: arch.mask  -- Preserve existing mask (already set correctly)
+      , mask: arch.mask      -- Preserve existing mask
+      , labels: arch.labels  -- Preserve existing labels
       , storage: updatedStorage
       }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
