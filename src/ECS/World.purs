@@ -28,13 +28,13 @@ module ECS.World
 import Prelude
 
 import Control.Monad.State (State, runState, state)
-import Data.Array (findIndex, index, length, take, updateAt)
+import Data.Array (index, length, take, updateAt)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, EntityManager, createEntity, deleteEntity, emptyEntityManager, entityIndex, validateEntity)
-import ECS.Internal.ComponentStorage (ComponentStorage)
+import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
 import ECS.Internal.ComponentStorage as CS
 
 -- | Archetype ID derived from sorted component type names.
@@ -73,12 +73,14 @@ derive newtype instance ordEntity :: Ord (Entity components)
 -- |
 -- | Contains:
 -- | - entities: Array of EntityIds in this archetype
+-- | - entityPositions: Map from entity index to position in entities array (O(log N) lookup)
 -- | - storage: Component label -> Array Foreign (component values)
 -- |
 -- | Type safety is enforced at the Entity level via phantom row types,
 -- | not at the archetype storage level. All archetypes have the same type.
 type Archetype =
   { entities :: Array EntityId
+  , entityPositions :: Map Int Int  -- entityIndex -> position in entities array
   , storage :: ComponentStorage
   }
 
@@ -135,8 +137,12 @@ spawnEntityPure world =
     -- Step 2: Get or create empty archetype
     emptyArch = getOrCreateEmptyArchetype world.archetypes
 
-    -- Step 3: Add entity to empty archetype
-    updatedArch = emptyArch { entities = emptyArch.entities <> [entityId] }
+    -- Step 3: Add entity to empty archetype with position tracking
+    newPosition = length emptyArch.entities
+    updatedArch = emptyArch
+      { entities = emptyArch.entities <> [entityId]
+      , entityPositions = Map.insert (entityIndex entityId) newPosition emptyArch.entityPositions
+      }
     updatedArchetypes = Map.insert emptyArchetypeId updatedArch world.archetypes
 
     -- Step 4: Update entity locations
@@ -171,7 +177,7 @@ despawnEntity entity = state \world ->
 -- | 1. Unwrap Entity to get EntityId
 -- | 2. Validate entity exists
 -- | 3. Find entity's archetype via entityLocations
--- | 4. Remove entity from archetype (swap-remove)
+-- | 4. Remove entity from archetype (swap-remove with position map update)
 -- | 5. Delete from entityLocations
 -- | 6. Delete EntityId via EntityManager
 -- | 7. Return updated World
@@ -200,24 +206,52 @@ despawnEntityPure (Entity entityId) world =
 
               Just arch ->
                 let
-                  -- Find entity's position in archetype
-                  maybePos = findIndex (\e -> e == entityId) arch.entities
+                  -- Find entity's position in archetype using O(log N) map lookup
+                  maybePos = Map.lookup idx arch.entityPositions
 
                   -- Swap-remove entity from archetype and remove its components
                   updatedArch = case maybePos of
                     Nothing -> arch  -- Entity not found, leave archetype unchanged
                     Just pos ->
                       let
-                        -- Remove entity from entities array
-                        updatedEntities = removeEntity entityId arch.entities
+                        lastIdx = length arch.entities - 1
 
-                        -- Remove corresponding components from all component arrays at index pos
+                        -- Swap-remove from entities array and update position map
+                        result = if pos == lastIdx then
+                          -- Target is last element, just remove
+                          { entities: take lastIdx arch.entities
+                          , positions: Map.delete idx arch.entityPositions
+                          }
+                        else
+                          -- Swap with last, update swapped entity's position
+                          case index arch.entities lastIdx of
+                            Nothing ->
+                              -- Shouldn't happen, but fallback
+                              { entities: arch.entities
+                              , positions: arch.entityPositions
+                              }
+                            Just lastEntity ->
+                              let
+                                swappedEntities = fromMaybe arch.entities $
+                                  updateAt pos lastEntity arch.entities
+                                truncatedEntities = take lastIdx swappedEntities
+                                -- Update positions: remove target, update swapped entity's position
+                                updatedPositions = Map.insert (entityIndex lastEntity) pos $
+                                  Map.delete idx arch.entityPositions
+                              in
+                                { entities: truncatedEntities
+                                , positions: updatedPositions
+                                }
+
+                        -- Swap-remove from component arrays
                         updatedStorage = CS.mapWithKey (\_ arr ->
-                          -- Remove element at index pos using filter with index
-                          filterWithIndex (\i _ -> i /= pos) arr
+                          arraySwapRemoveAt pos arr
                         ) arch.storage
                       in
-                        { entities: updatedEntities, storage: updatedStorage }
+                        { entities: result.entities
+                        , entityPositions: result.positions
+                        , storage: updatedStorage
+                        }
 
                   updatedArchetypes = Map.insert archId updatedArch world.archetypes
 
@@ -260,52 +294,8 @@ getOrCreateEmptyArchetype :: Map ArchetypeId Archetype -> Archetype
 getOrCreateEmptyArchetype archetypes =
   case Map.lookup emptyArchetypeId archetypes of
     Just arch -> arch
-    Nothing -> { entities: [], storage: CS.empty }
+    Nothing -> { entities: [], entityPositions: Map.empty, storage: CS.empty }
 
-
--- | Remove entity from archetype's entity array (swap-remove).
--- |
--- | Algorithm:
--- | 1. Find entity's position in array
--- | 2. If found, swap with last entity
--- | 3. Pop last element
--- | 4. Return updated array
--- |
--- | Complexity: O(n) for find, O(1) for remove
-removeEntity :: EntityId -> Array EntityId -> Array EntityId
-removeEntity targetId entities =
-  case findIndex (\e -> e == targetId) entities of
-    Nothing -> entities  -- Not found, return unchanged
-    Just idx ->
-      let
-        lastIdx = length entities - 1
-      in
-        if idx == lastIdx then
-          -- Target is last element, just pop
-          take lastIdx entities
-        else
-          -- Swap with last, then pop
-          let
-            swapped = fromMaybe entities $ do
-              lastElem <- index entities lastIdx
-              updated <- updateAt idx lastElem entities
-              pure updated
-          in
-            take lastIdx swapped
-
--- | Filter array with index predicate.
--- |
--- | Similar to filter but provides the index to the predicate function.
-filterWithIndex :: forall a. (Int -> a -> Boolean) -> Array a -> Array a
-filterWithIndex f arr = go 0 []
-  where
-    go idx acc =
-      if idx >= length arr then acc
-      else case index arr idx of
-        Nothing -> go (idx + 1) acc
-        Just x -> if f idx x
-                   then go (idx + 1) (acc <> [x])
-                   else go (idx + 1) acc
 
 -- Note: Using Tuple syntax for State monad pattern matching
 -- Pattern: let (Tuple state value) = runState action initialState

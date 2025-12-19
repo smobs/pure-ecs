@@ -29,15 +29,15 @@ module ECS.Component
 import Prelude
 
 import Control.Monad.State (State, state, get)
-import Data.Array (filter, findIndex, index, length, sort, (:))
+import Data.Array (elem, filter, findIndex, index, length, sort, take, updateAt, (:))
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.String (Pattern(..), joinWith, split)
 import Data.String.Common (trim)
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
 import ECS.World (World, Entity, ArchetypeId, unEntity, wrapEntity)
-import ECS.Internal.ComponentStorage (ComponentStorage)
+import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
 import ECS.Internal.ComponentStorage as CS
 import Foreign (Foreign)
 import Prim.Row (class Cons, class Lacks)
@@ -334,8 +334,8 @@ getComponentPure labelProxy entity world =
                 -- Extract label as string
                 labelStr = reflectSymbol labelProxy
 
-                -- Find entity's position in archetype
-                maybePos = findIndex (\e -> e == entityId) arch.entities
+                -- Find entity's position in archetype using O(log N) map lookup
+                maybePos = Map.lookup idx arch.entityPositions
               in
                 case maybePos of
                   Nothing -> Nothing
@@ -376,14 +376,13 @@ moveEntityWithComponent entityId oldArchId newArchId label componentValue world 
   let
     idx = entityIndex entityId
 
-    -- Extract existing components before removing
+    -- Extract existing components before removing using O(log N) position lookup
     existingComponents = case Map.lookup oldArchId world.archetypes of
       Nothing -> CS.empty  -- No old archetype, no components
       Just arch ->
-        let maybeEntityIdx = findIndex (\e -> e == entityId) arch.entities
-        in case maybeEntityIdx of
-             Nothing -> CS.empty  -- Entity not found in old archetype
-             Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
+        case Map.lookup idx arch.entityPositions of
+          Nothing -> CS.empty  -- Entity not found in old archetype
+          Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
 
     -- Remove from old archetype
     world1 = removeFromArchetype entityId oldArchId world
@@ -405,20 +404,18 @@ moveEntityToArchetype entityId oldArchId newArchId world =
   let
     idx = entityIndex entityId
 
-    -- Extract existing components before removing
+    -- Extract existing components before removing using O(log N) position lookup
     existingComponents = case Map.lookup oldArchId world.archetypes of
       Nothing -> CS.empty  -- No old archetype, no components
       Just arch ->
-        let maybeEntityIdx = findIndex (\e -> e == entityId) arch.entities
-        in case maybeEntityIdx of
-             Nothing -> CS.empty  -- Entity not found in old archetype
-             Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
+        case Map.lookup idx arch.entityPositions of
+          Nothing -> CS.empty  -- Entity not found in old archetype
+          Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
 
     -- Filter to only components that exist in new archetype ID
     newArchLabels = parseArchetypeId newArchId
-    filteredComponents = CS.filterKeys (\label -> case findIndex (\l -> l == label) newArchLabels of
-      Just _ -> true
-      Nothing -> false
+    filteredComponents = CS.filterKeys (\label ->
+      elem label newArchLabels
     ) existingComponents
 
     -- Remove from old archetype
@@ -439,7 +436,7 @@ addToArchetypeWithAllComponents entityId archId allComponents world =
     -- Get or create archetype
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
-      Nothing -> { entities: [], storage: CS.empty }
+      Nothing -> { entities: [], entityPositions: Map.empty, storage: CS.empty }
 
     -- For each component, append to archetype's component arrays
     updatedStorage = CS.fold (\acc label singletonArray ->
@@ -451,13 +448,18 @@ addToArchetypeWithAllComponents entityId archId allComponents world =
       in CS.insert label updatedArray acc
     ) arch.storage allComponents
 
-    -- Add entity
-    updatedArch = { entities: arch.entities <> [entityId], storage: updatedStorage }
+    -- Add entity with position tracking
+    newPosition = length arch.entities
+    updatedArch =
+      { entities: arch.entities <> [entityId]
+      , entityPositions: Map.insert (entityIndex entityId) newPosition arch.entityPositions
+      , storage: updatedStorage
+      }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
   in
     world { archetypes = updatedArchetypes }
 
--- | Remove entity from archetype (swap-remove).
+-- | Remove entity from archetype (swap-remove with O(log N) lookup).
 removeFromArchetype :: EntityId -> ArchetypeId -> World -> World
 removeFromArchetype entityId archId world =
   case Map.lookup archId world.archetypes of
@@ -465,24 +467,54 @@ removeFromArchetype entityId archId world =
 
     Just arch ->
       let
-        -- Find entity position
-        maybePos = findIndex (\e -> e == entityId) arch.entities
+        idx = entityIndex entityId
+        -- Find entity position using O(log N) map lookup
+        maybePos = Map.lookup idx arch.entityPositions
       in
         case maybePos of
           Nothing -> world  -- Entity not in archetype
           Just pos ->
             let
-              -- Remove entity from entities array
-              newEntities = filter (\e -> e /= entityId) arch.entities
+              lastIdx = length arch.entities - 1
 
-              -- Remove corresponding components from all component arrays at index pos
+              -- Swap-remove from entities array and update position map
+              result = if pos == lastIdx then
+                -- Target is last element, just remove
+                { entities: take lastIdx arch.entities
+                , positions: Map.delete idx arch.entityPositions
+                }
+              else
+                -- Swap with last, update swapped entity's position
+                case index arch.entities lastIdx of
+                  Nothing ->
+                    -- Shouldn't happen, but fallback
+                    { entities: arch.entities
+                    , positions: arch.entityPositions
+                    }
+                  Just lastEntity ->
+                    let
+                      swappedEntities = fromMaybe arch.entities $
+                        updateAt pos lastEntity arch.entities
+                      truncatedEntities = take lastIdx swappedEntities
+                      -- Update positions: remove target, update swapped entity's position
+                      updatedPositions = Map.insert (entityIndex lastEntity) pos $
+                        Map.delete idx arch.entityPositions
+                    in
+                      { entities: truncatedEntities
+                      , positions: updatedPositions
+                      }
+
+              -- Swap-remove from component arrays
               updatedStorage = CS.mapWithKey (\_ arr ->
-                -- Remove element at index pos using filter with index
-                filterWithIndex (\idx _ -> idx /= pos) arr
+                arraySwapRemoveAt pos arr
               ) arch.storage
 
               -- Update archetype
-              updatedArch = { entities: newEntities, storage: updatedStorage }
+              updatedArch =
+                { entities: result.entities
+                , entityPositions: result.positions
+                , storage: updatedStorage
+                }
               updatedArchetypes = Map.insert archId updatedArch world.archetypes
             in
               world { archetypes = updatedArchetypes }
@@ -500,18 +532,6 @@ extractAllComponentsForEntity idx storage =
       Just componentValue -> CS.insert label (CS.arrayFromSingleton componentValue) acc
       Nothing -> acc  -- Should never happen in correct usage
   ) CS.empty storage
-
--- Helper to filter array with index
-filterWithIndex :: forall a. (Int -> a -> Boolean) -> Array a -> Array a
-filterWithIndex f arr = go 0 []
-  where
-    go idx acc =
-      if idx >= length arr then acc
-      else case index arr idx of
-        Nothing -> go (idx + 1) acc
-        Just x -> if f idx x
-                   then go (idx + 1) (acc <> [x])
-                   else go (idx + 1) acc
 
 -- Helper for array range
 range :: Int -> Int -> Array Int
@@ -532,7 +552,7 @@ addToArchetypeWithComponent entityId archId existingComponents newLabel newCompo
     -- Get or create archetype with component storage
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
-      Nothing -> { entities: [], storage: CS.empty }
+      Nothing -> { entities: [], entityPositions: Map.empty, storage: CS.empty }
 
     -- Merge existing components + new component (wrap single value in array)
     allComponents = CS.insert newLabel (CS.arrayFromSingleton newComponentValue) existingComponents
@@ -547,8 +567,13 @@ addToArchetypeWithComponent entityId archId existingComponents newLabel newCompo
       in CS.insert label updatedArray acc
     ) arch.storage allComponents
 
-    -- Add entity
-    updatedArch = { entities: arch.entities <> [entityId], storage: updatedStorage }
+    -- Add entity with position tracking
+    newPosition = length arch.entities
+    updatedArch =
+      { entities: arch.entities <> [entityId]
+      , entityPositions: Map.insert (entityIndex entityId) newPosition arch.entityPositions
+      , storage: updatedStorage
+      }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
   in
     world { archetypes = updatedArchetypes }

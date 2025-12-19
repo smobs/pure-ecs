@@ -20,6 +20,7 @@ module ECS.Internal.ComponentStorage
   , arrayIndex
   , arrayFromSingleton
   , arrayRemoveAt
+  , arraySwapRemoveAt
   , componentToForeign
   , componentFromForeign
   ) where
@@ -137,3 +138,23 @@ componentToForeign = unsafeToForeign
 -- | Unsafe: Caller must ensure the type matches.
 componentFromForeign :: forall a. Foreign -> a
 componentFromForeign = unsafeFromForeign
+
+-- | Swap-remove element at index (O(1) removal, doesn't preserve order)
+-- |
+-- | Algorithm:
+-- | 1. If index is last element, just drop it
+-- | 2. Otherwise, swap with last element and drop last
+-- | 3. Return new array
+arraySwapRemoveAt :: Int -> ComponentArray -> ComponentArray
+arraySwapRemoveAt idx arr =
+  let lastIdx = Array.length arr - 1
+  in if lastIdx < 0 then
+       arr  -- Empty array, nothing to remove
+     else if idx == lastIdx then
+       Array.take lastIdx arr  -- Target is last, just drop
+     else case Array.index arr lastIdx of
+       Nothing -> arr  -- Shouldn't happen
+       Just lastElem ->
+         case Array.updateAt idx lastElem arr of
+           Nothing -> arr  -- Shouldn't happen
+           Just swapped -> Array.take lastIdx swapped

@@ -25,7 +25,7 @@ module ECS.Query
 
 import Prelude
 
-import Data.Array (filter, foldl, uncons)
+import Data.Array (filter, foldl)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
@@ -283,7 +283,7 @@ instance readComponentsCons ::
 -- |
 -- | Algorithm:
 -- | 1. Find archetype in world
--- | 2. Find entity's index in archetype
+-- | 2. Find entity's index in archetype using O(log N) position map
 -- | 3. Get component array for the label
 -- | 4. Index into array at entity's position
 -- | 5. Unsafely coerce from Foreign to component type
@@ -299,8 +299,8 @@ readComponentValue label archId entityId world =
 
     Just arch ->
       let
-        -- Find entity's index in archetype
-        entityIdx = findEntityIndex entityId arch.entities
+        -- Find entity's index in archetype using O(log N) position map
+        entityIdx = Map.lookup (entityIndex entityId) arch.entityPositions
       in
         case entityIdx of
           Nothing ->
@@ -322,22 +322,3 @@ readComponentValue label archId entityId world =
                   Just foreignValue ->
                     -- Cast from Foreign to component type
                     CS.componentFromForeign foreignValue
-
--- | Find entity's index in archetype's entity array.
-findEntityIndex :: EntityId -> Array EntityId -> Maybe Int
-findEntityIndex entityId entities =
-  let
-    idx = entityIndex entityId
-  in
-    -- Linear search for entity (could optimize with Map)
-    findIndexHelper (\eid -> entityIndex eid == idx) entities
-  where
-    findIndexHelper :: forall a. (a -> Boolean) -> Array a -> Maybe Int
-    findIndexHelper predicate arr = go 0 arr
-      where
-        go :: Int -> Array a -> Maybe Int
-        go i xs = case uncons xs of
-          Nothing -> Nothing
-          Just { head: x, tail: rest } ->
-            if predicate x then Just i
-            else go (i + 1) rest
