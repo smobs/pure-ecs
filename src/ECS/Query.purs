@@ -25,16 +25,16 @@ module ECS.Query
 
 import Prelude
 
-import Data.Array (filter, foldl)
+import Data.Array (foldl)
+import Data.Foldable (foldl) as F
+import Data.Int.Bits (shl)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
-import Data.String (Pattern(..), split)
-import Data.String.Common (trim)
 import Data.Tuple.Nested (type (/\), (/\))
 import ECS.Entity (EntityId, entityIndex)
-import ECS.World (World, Entity, ArchetypeId, Archetype, wrapEntity)
+import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, wrapEntity, maskContains, maskHasAny)
 import ECS.Internal.ComponentStorage as CS
 import Prim.Row (class Cons, class Lacks)
 import Prim.RowList (class RowToList, RowList)
@@ -108,11 +108,12 @@ without labelProxy (Query q) =
 -- | Execute a query, returning all matching entities with their components.
 -- |
 -- | Algorithm:
--- | 1. Iterate all archetypes in world
--- | 2. Check if archetype matches required/excluded constraints
--- | 3. For matching archetypes, extract all entities
--- | 4. For each entity, read component values using RowToList
--- | 5. Build QueryResult records
+-- | 1. Convert required/excluded labels to bitmasks
+-- | 2. Iterate all archetypes in world
+-- | 3. Check if archetype matches using O(1) bitmask operations
+-- | 4. For matching archetypes, extract all entities
+-- | 5. For each entity, read component values using RowToList
+-- | 6. Build QueryResult records
 -- |
 -- | Returns: Array of query results
 runQuery :: forall required excluded rl.
@@ -124,23 +125,38 @@ runQuery :: forall required excluded rl.
   Array (QueryResult required)
 runQuery (Query q) world =
   let
-    -- Get all archetypes from world
-    archetypes = Map.toUnfoldable world.archetypes :: Array _
+    -- Convert labels to masks using the world's registry
+    -- If any required label is not registered, no archetype can match
+    requiredResult = labelsToMaskStrict q.requiredLabels world
+    excludedMask = labelsToMask q.excludedLabels world
+  in
+    case requiredResult of
+      Nothing -> []  -- Required component not registered, no matches possible
+      Just requiredMask ->
+        let
+          -- Get all archetypes from world
+          archetypes = Map.toUnfoldable world.archetypes :: Array _
 
-    -- Filter to matching archetypes
-    matchingArchs = filter (\(archId /\ _) -> archetypeMatches archId q.requiredLabels q.excludedLabels) archetypes
+          -- Filter to matching archetypes using O(1) bitmask operations
+          matchingArchs = foldl (\acc (_ /\ arch) ->
+            if archetypeMatchesMask arch.mask requiredMask excludedMask
+              then acc <> [arch]
+              else acc
+          ) [] archetypes
 
-    -- Extract results from each matching archetype
-    results = foldl (\acc (archId /\ arch) ->
-      let archResults = extractFromArchetype archId arch world
-      in acc <> archResults
-    ) [] matchingArchs
-  in results
+          -- Extract results from each matching archetype
+          results = foldl (\acc arch ->
+            let archResults = extractFromArchetype arch world
+            in acc <> archResults
+          ) [] matchingArchs
+        in results
   where
     -- Extract query results from a single archetype
-    extractFromArchetype :: ArchetypeId -> Archetype -> World -> Array (QueryResult required)
-    extractFromArchetype archId arch world' =
+    extractFromArchetype :: Archetype -> World -> Array (QueryResult required)
+    extractFromArchetype arch world' =
       let
+        -- Find archetype ID for reading (needed by readComponents)
+        archId = findArchetypeId arch world'
 
         -- Build result for each entity in archetype
         entityResults = map (\entityId ->
@@ -153,6 +169,49 @@ runQuery (Query q) world =
             }
         ) arch.entities
       in entityResults
+
+    -- Find archetype ID from archetype (reverse lookup)
+    findArchetypeId :: Archetype -> World -> ArchetypeId
+    findArchetypeId arch w =
+      let
+        archs = Map.toUnfoldable w.archetypes :: Array _
+        found = foldl (\acc (id /\ a) ->
+          if a.mask == arch.mask then id else acc
+        ) "" archs
+      in found
+
+-- | Convert a set of labels to a bitmask using the world's registry.
+-- | Returns Nothing if any label is not registered (meaning no matches possible).
+labelsToMaskStrict :: Set String -> World -> Maybe ComponentMask
+labelsToMaskStrict labels world =
+  F.foldl (\maybeAcc label ->
+    case maybeAcc of
+      Nothing -> Nothing  -- Already failed
+      Just acc ->
+        case Map.lookup label world.componentRegistry.labelToBit of
+          Just bit -> Just (acc + (1 `shl` bit))
+          Nothing -> Nothing  -- Label not registered, no matches possible
+  ) (Just 0) labels
+
+-- | Convert a set of labels to a bitmask using the world's registry.
+-- | Labels not found are ignored (used for exclusion where missing = no exclusion).
+labelsToMask :: Set String -> World -> ComponentMask
+labelsToMask labels world =
+  F.foldl (\mask label ->
+    case Map.lookup label world.componentRegistry.labelToBit of
+      Just bit -> mask + (1 `shl` bit)
+      Nothing -> mask  -- Label not registered, treat as 0
+  ) 0 labels
+
+-- | Check if archetype matches query using O(1) bitmask operations.
+-- |
+-- | Matching rules:
+-- | 1. Archetype MUST have ALL required bits set
+-- | 2. Archetype MUST NOT have ANY excluded bits set
+archetypeMatchesMask :: ComponentMask -> ComponentMask -> ComponentMask -> Boolean
+archetypeMatchesMask archMask requiredMask excludedMask =
+  maskContains archMask requiredMask &&
+  not (maskHasAny archMask excludedMask)
 
 -- | Apply a callback to each query result, collecting the return values.
 -- |
@@ -190,39 +249,6 @@ mapQuery :: forall required excluded rl.
 mapQuery q f world =
   let results = runQuery q world
   in foldl (\w r -> f r w) world results
-
--- | Check if an archetype matches query constraints.
--- |
--- | Matching rules:
--- | 1. Archetype MUST contain ALL required components (set containment)
--- | 2. Archetype MUST NOT contain ANY excluded components (set disjoint)
--- |
--- | Time complexity: O(R + E) where R = required count, E = excluded count
-archetypeMatches :: ArchetypeId -> Set String -> Set String -> Boolean
-archetypeMatches archId required excluded =
-  let
-    -- Parse archetype ID to set of component labels
-    archLabels = parseArchetypeId archId
-
-    -- Check all required components exist
-    hasRequired = required `Set.subset` archLabels
-
-    -- Check no excluded components exist
-    noExcluded = Set.isEmpty (excluded `Set.intersection` archLabels)
-  in
-    hasRequired && noExcluded
-
--- | Parse archetype ID string to set of component labels.
--- |
--- | Example: "Position,Velocity" -> Set {"Position", "Velocity"}
-parseArchetypeId :: ArchetypeId -> Set String
-parseArchetypeId archId =
-  if archId == "" then
-    Set.empty
-  else
-    let parts = split (Pattern ",") archId
-        trimmed = map trim parts
-    in Set.fromFoldable trimmed
 
 -- ============================================================================
 -- Type Classes for Generic Row Operations

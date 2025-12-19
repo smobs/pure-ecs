@@ -14,12 +14,22 @@ module ECS.World
   , Entity
   , Archetype
   , ArchetypeId
+  , ComponentMask
+  , ComponentRegistry
   , emptyWorld
   , spawnEntity
   , despawnEntity
   , hasEntity
   , unEntity
   , wrapEntity
+  -- Component mask operations
+  , getComponentMask
+  , getOrCreateComponentMask
+  , bitToMask
+  , maskContains
+  , maskHasAny
+  , maskAddBit
+  , maskRemoveBit
   -- Pure versions (for internal use)
   , spawnEntityPure
   , despawnEntityPure
@@ -29,6 +39,7 @@ import Prelude
 
 import Control.Monad.State (State, runState, state)
 import Data.Array (index, length, take, updateAt)
+import Data.Int.Bits (shl, (.&.), (.|.))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -36,6 +47,22 @@ import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, EntityManager, createEntity, deleteEntity, emptyEntityManager, entityIndex, validateEntity)
 import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
 import ECS.Internal.ComponentStorage as CS
+
+-- | Bitmask for fast component matching.
+-- |
+-- | Each component label is assigned a unique bit position (0-30).
+-- | Supports up to 31 unique component types (Int is 32-bit signed).
+-- | Archetype matching becomes O(1) bitwise AND instead of O(C) set operations.
+type ComponentMask = Int
+
+-- | Registry mapping component labels to their bit positions.
+-- |
+-- | Built lazily as new component types are encountered.
+-- | Persists across world modifications.
+type ComponentRegistry =
+  { labelToBit :: Map String Int
+  , nextBit :: Int
+  }
 
 -- | Archetype ID derived from sorted component type names.
 -- |
@@ -49,10 +76,12 @@ type ArchetypeId = String
 -- | - entities: EntityManager for ID lifecycle (Phase 1)
 -- | - archetypes: Type-erased archetype storage (Map ArchetypeId Foreign)
 -- | - entityLocations: Tracks which archetype contains each entity
+-- | - componentRegistry: Maps component labels to bit positions for fast matching
 type World =
   { entities :: EntityManager
-  , archetypes :: Map ArchetypeId Archetype  -- No more Foreign!
+  , archetypes :: Map ArchetypeId Archetype
   , entityLocations :: Map Int ArchetypeId
+  , componentRegistry :: ComponentRegistry
   }
 
 -- | Entity handle with phantom row type.
@@ -74,6 +103,7 @@ derive newtype instance ordEntity :: Ord (Entity components)
 -- | Contains:
 -- | - entities: Array of EntityIds in this archetype
 -- | - entityPositions: Map from entity index to position in entities array (O(log N) lookup)
+-- | - mask: Bitmask of component types for O(1) query matching
 -- | - storage: Component label -> Array Foreign (component values)
 -- |
 -- | Type safety is enforced at the Entity level via phantom row types,
@@ -81,6 +111,7 @@ derive newtype instance ordEntity :: Ord (Entity components)
 type Archetype =
   { entities :: Array EntityId
   , entityPositions :: Map Int Int  -- entityIndex -> position in entities array
+  , mask :: ComponentMask           -- Bitmask for fast query matching
   , storage :: ComponentStorage
   }
 
@@ -94,11 +125,13 @@ emptyArchetypeId = ""
 -- | - No entities
 -- | - No archetypes (will create "" archetype on first spawn)
 -- | - Empty entity location tracking
+-- | - Empty component registry
 emptyWorld :: World
 emptyWorld =
   { entities: emptyEntityManager
   , archetypes: Map.empty
   , entityLocations: Map.empty
+  , componentRegistry: { labelToBit: Map.empty, nextBit: 0 }
   }
 
 -- | Spawn a new entity (monadic version).
@@ -250,6 +283,7 @@ despawnEntityPure (Entity entityId) world =
                       in
                         { entities: result.entities
                         , entityPositions: result.positions
+                        , mask: arch.mask  -- Mask stays the same
                         , storage: updatedStorage
                         }
 
@@ -294,7 +328,71 @@ getOrCreateEmptyArchetype :: Map ArchetypeId Archetype -> Archetype
 getOrCreateEmptyArchetype archetypes =
   case Map.lookup emptyArchetypeId archetypes of
     Just arch -> arch
-    Nothing -> { entities: [], entityPositions: Map.empty, storage: CS.empty }
+    Nothing -> { entities: [], entityPositions: Map.empty, mask: 0, storage: CS.empty }
+
+-- | Get the bit position for a component label.
+-- |
+-- | Returns Nothing if the label hasn't been registered yet.
+getComponentMask :: String -> World -> Maybe Int
+getComponentMask label world =
+  Map.lookup label world.componentRegistry.labelToBit
+
+-- | Get or create a bit position for a component label.
+-- |
+-- | If the label already exists, returns its existing bit.
+-- | Otherwise, assigns the next available bit and updates the registry.
+-- |
+-- | Returns the bit position and updated world.
+getOrCreateComponentMask :: String -> World -> { bit :: Int, world :: World }
+getOrCreateComponentMask label world =
+  case Map.lookup label world.componentRegistry.labelToBit of
+    Just bit -> { bit, world }
+    Nothing ->
+      let
+        bit = world.componentRegistry.nextBit
+        newRegistry =
+          { labelToBit: Map.insert label bit world.componentRegistry.labelToBit
+          , nextBit: bit + 1
+          }
+      in
+        { bit, world: world { componentRegistry = newRegistry } }
+
+-- | Create a bitmask from a single bit position.
+-- |
+-- | Example: bitToMask 3 = 0b1000 = 8
+bitToMask :: Int -> ComponentMask
+bitToMask bit = 1 `shl` bit
+
+-- | Check if a mask contains all required bits.
+-- |
+-- | (archMask .&. requiredMask) == requiredMask
+maskContains :: ComponentMask -> ComponentMask -> Boolean
+maskContains archMask requiredMask =
+  (archMask .&. requiredMask) == requiredMask
+
+-- | Check if a mask has any excluded bits.
+-- |
+-- | (archMask .&. excludedMask) /= 0
+maskHasAny :: ComponentMask -> ComponentMask -> Boolean
+maskHasAny archMask excludedMask =
+  (archMask .&. excludedMask) /= 0
+
+-- | Add a bit to a mask.
+-- |
+-- | mask .|. (1 `shl` bit)
+maskAddBit :: ComponentMask -> Int -> ComponentMask
+maskAddBit mask bit = mask .|. (1 `shl` bit)
+
+-- | Remove a bit from a mask.
+-- |
+-- | mask .&. complement (1 `shl` bit)
+-- | Note: Using XOR since we know the bit is set
+maskRemoveBit :: ComponentMask -> Int -> ComponentMask
+maskRemoveBit mask bit =
+  let bitMask = 1 `shl` bit
+  in if (mask .&. bitMask) /= 0
+     then mask - bitMask  -- Equivalent to XOR when bit is set
+     else mask
 
 
 -- Note: Using Tuple syntax for State monad pattern matching

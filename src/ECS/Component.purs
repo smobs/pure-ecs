@@ -36,7 +36,7 @@ import Data.String (Pattern(..), joinWith, split)
 import Data.String.Common (trim)
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
-import ECS.World (World, Entity, ArchetypeId, unEntity, wrapEntity)
+import ECS.World (World, Entity, ArchetypeId, ComponentMask, unEntity, wrapEntity, getOrCreateComponentMask, maskAddBit, maskRemoveBit)
 import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
 import ECS.Internal.ComponentStorage as CS
 import Foreign (Foreign)
@@ -257,8 +257,8 @@ removeComponentPure labelProxy entity world =
             -- Calculate new archetype ID
             newArchId = removeLabelFromArchetype labelStr oldArchId
 
-            -- Move entity to new archetype
-            result = moveEntityToArchetype entityId oldArchId newArchId world
+            -- Move entity to new archetype (pass label for mask computation)
+            result = moveEntityToArchetype entityId oldArchId newArchId labelStr world
           in
             { world: result.world, entity: wrapEntity entityId }
 
@@ -376,8 +376,19 @@ moveEntityWithComponent entityId oldArchId newArchId label componentValue world 
   let
     idx = entityIndex entityId
 
+    -- Get or create the bit for this component label
+    { bit: labelBit, world: worldWithBit } = getOrCreateComponentMask label world
+
+    -- Get the old archetype's mask (or 0 if doesn't exist)
+    oldMask = case Map.lookup oldArchId worldWithBit.archetypes of
+      Nothing -> 0
+      Just arch -> arch.mask
+
+    -- New mask includes the new component
+    newMask = maskAddBit oldMask labelBit
+
     -- Extract existing components before removing using O(log N) position lookup
-    existingComponents = case Map.lookup oldArchId world.archetypes of
+    existingComponents = case Map.lookup oldArchId worldWithBit.archetypes of
       Nothing -> CS.empty  -- No old archetype, no components
       Just arch ->
         case Map.lookup idx arch.entityPositions of
@@ -385,10 +396,10 @@ moveEntityWithComponent entityId oldArchId newArchId label componentValue world 
           Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
 
     -- Remove from old archetype
-    world1 = removeFromArchetype entityId oldArchId world
+    world1 = removeFromArchetype entityId oldArchId worldWithBit
 
-    -- Add to new archetype with ALL components (existing + new)
-    world2 = addToArchetypeWithComponent entityId newArchId existingComponents label componentValue world1
+    -- Add to new archetype with ALL components (existing + new) and new mask
+    world2 = addToArchetypeWithComponent entityId newArchId newMask existingComponents label componentValue world1
 
     -- Update entity location
     updatedLocations = Map.insert idx newArchId world2.entityLocations
@@ -399,10 +410,21 @@ moveEntityWithComponent entityId oldArchId newArchId label componentValue world 
 -- |
 -- | Extracts and preserves remaining components after removal.
 -- | Used by removeComponent to migrate entity to archetype without removed component.
-moveEntityToArchetype :: EntityId -> ArchetypeId -> ArchetypeId -> World -> { world :: World }
-moveEntityToArchetype entityId oldArchId newArchId world =
+moveEntityToArchetype :: EntityId -> ArchetypeId -> ArchetypeId -> String -> World -> { world :: World }
+moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
   let
     idx = entityIndex entityId
+
+    -- Get the bit for the removed label (should already exist)
+    removedBit = case Map.lookup removedLabel world.componentRegistry.labelToBit of
+      Just bit -> bit
+      Nothing -> 0  -- Shouldn't happen, but fallback
+
+    -- Get the old archetype's mask and remove the bit
+    oldMask = case Map.lookup oldArchId world.archetypes of
+      Nothing -> 0
+      Just arch -> arch.mask
+    newMask = maskRemoveBit oldMask removedBit
 
     -- Extract existing components before removing using O(log N) position lookup
     existingComponents = case Map.lookup oldArchId world.archetypes of
@@ -421,8 +443,8 @@ moveEntityToArchetype entityId oldArchId newArchId world =
     -- Remove from old archetype
     world1 = removeFromArchetype entityId oldArchId world
 
-    -- Add to new archetype with filtered components
-    world2 = addToArchetypeWithAllComponents entityId newArchId filteredComponents world1
+    -- Add to new archetype with filtered components and new mask
+    world2 = addToArchetypeWithAllComponents entityId newArchId newMask filteredComponents world1
 
     -- Update entity location
     updatedLocations = Map.insert idx newArchId world2.entityLocations
@@ -430,13 +452,13 @@ moveEntityToArchetype entityId oldArchId newArchId world =
     { world: world2 { entityLocations = updatedLocations } }
 
 -- | Add entity to archetype with multiple components (used by removeComponent).
-addToArchetypeWithAllComponents :: EntityId -> ArchetypeId -> ComponentStorage -> World -> World
-addToArchetypeWithAllComponents entityId archId allComponents world =
+addToArchetypeWithAllComponents :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> World -> World
+addToArchetypeWithAllComponents entityId archId newMask allComponents world =
   let
     -- Get or create archetype
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
-      Nothing -> { entities: [], entityPositions: Map.empty, storage: CS.empty }
+      Nothing -> { entities: [], entityPositions: Map.empty, mask: newMask, storage: CS.empty }
 
     -- For each component, append to archetype's component arrays
     updatedStorage = CS.fold (\acc label singletonArray ->
@@ -448,11 +470,12 @@ addToArchetypeWithAllComponents entityId archId allComponents world =
       in CS.insert label updatedArray acc
     ) arch.storage allComponents
 
-    -- Add entity with position tracking
+    -- Add entity with position tracking (mask is set on creation or preserved)
     newPosition = length arch.entities
     updatedArch =
       { entities: arch.entities <> [entityId]
       , entityPositions: Map.insert (entityIndex entityId) newPosition arch.entityPositions
+      , mask: arch.mask  -- Preserve existing mask
       , storage: updatedStorage
       }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
@@ -509,10 +532,11 @@ removeFromArchetype entityId archId world =
                 arraySwapRemoveAt pos arr
               ) arch.storage
 
-              -- Update archetype
+              -- Update archetype (preserve mask - archetype signature doesn't change)
               updatedArch =
                 { entities: result.entities
                 , entityPositions: result.positions
+                , mask: arch.mask  -- Mask stays the same
                 , storage: updatedStorage
                 }
               updatedArchetypes = Map.insert archId updatedArch world.archetypes
@@ -543,16 +567,17 @@ infixl 8 range as ..
 
 -- | Add entity to archetype with components (both existing and new).
 -- |
+-- | mask: Precomputed bitmask for the new archetype
 -- | existingComponents: ComponentStorage of component values to preserve (from old archetype)
 -- | label: new component label to add
 -- | componentValue: new component value to add
-addToArchetypeWithComponent :: EntityId -> ArchetypeId -> ComponentStorage -> String -> Foreign -> World -> World
-addToArchetypeWithComponent entityId archId existingComponents newLabel newComponentValue world =
+addToArchetypeWithComponent :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> String -> Foreign -> World -> World
+addToArchetypeWithComponent entityId archId newMask existingComponents newLabel newComponentValue world =
   let
     -- Get or create archetype with component storage
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
-      Nothing -> { entities: [], entityPositions: Map.empty, storage: CS.empty }
+      Nothing -> { entities: [], entityPositions: Map.empty, mask: newMask, storage: CS.empty }
 
     -- Merge existing components + new component (wrap single value in array)
     allComponents = CS.insert newLabel (CS.arrayFromSingleton newComponentValue) existingComponents
@@ -567,11 +592,12 @@ addToArchetypeWithComponent entityId archId existingComponents newLabel newCompo
       in CS.insert label updatedArray acc
     ) arch.storage allComponents
 
-    -- Add entity with position tracking
+    -- Add entity with position tracking (mask is set on creation or preserved)
     newPosition = length arch.entities
     updatedArch =
       { entities: arch.entities <> [entityId]
       , entityPositions: Map.insert (entityIndex entityId) newPosition arch.entityPositions
+      , mask: arch.mask  -- Preserve existing mask (already set correctly)
       , storage: updatedStorage
       }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
