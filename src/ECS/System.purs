@@ -27,7 +27,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import ECS.Component (addComponentPure, removeComponentPure, getComponentPure)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)
-import ECS.Query (runQuery) as Q
+import ECS.Query (runQueryCached) as Q
 import ECS.Query as ECSQuery
 import ECS.World (World, Entity)
 import Prim.Row (class Union, class Cons, class Lacks)
@@ -93,7 +93,8 @@ query :: forall required excluded reads writes extra rl.
   Query required excluded ->
   System reads writes (Array (QueryResult required))
 query q = state \world ->
-  Tuple (Q.runQuery q world) world
+  let { results, world: world' } = Q.runQueryCached q world
+  in Tuple results world'
 
 -- | Type-directed query - the recommended way to query entities in systems.
 -- |
@@ -124,7 +125,8 @@ queryFor :: forall @required reads writes extra rl.
   Union required extra reads =>
   System reads writes (Array (QueryResult required))
 queryFor = state \world ->
-  Tuple (Q.runQuery (ECSQuery.query (Proxy :: Proxy required)) world) world
+  let { results, world: world' } = Q.runQueryCached (ECSQuery.query (Proxy :: Proxy required)) world
+  in Tuple results world'
 
 -- | Update a component within a system.
 -- |

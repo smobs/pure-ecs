@@ -37,7 +37,7 @@ import Data.String (Pattern(..), joinWith, split)
 import Data.String.Common (trim)
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
-import ECS.World (World, Entity, ArchetypeId, ComponentMask, unEntity, wrapEntity, getOrCreateComponentMask, maskAddBit, maskRemoveBit)
+import ECS.World (World, Entity, ArchetypeId, ComponentMask, unEntity, wrapEntity, getOrCreateComponentMask, maskAddBit, maskRemoveBit, incrementStructuralVersion)
 import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
 import ECS.Internal.ComponentStorage as CS
 import Foreign (Foreign)
@@ -463,6 +463,9 @@ moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
 addToArchetypeWithAllComponents :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> World -> World
 addToArchetypeWithAllComponents entityId archId newMask allComponents world =
   let
+    -- Check if this is a new archetype (for cache invalidation)
+    isNewArchetype = not $ Map.member archId world.archetypes
+
     -- Get or create archetype (compute labels from ID for new archetypes)
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
@@ -494,8 +497,13 @@ addToArchetypeWithAllComponents entityId archId newMask allComponents world =
       , storage: updatedStorage
       }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
+
+    -- Increment structural version if we created a new archetype (invalidates query cache)
+    world' = world { archetypes = updatedArchetypes }
   in
-    world { archetypes = updatedArchetypes }
+    if isNewArchetype
+      then incrementStructuralVersion world'
+      else world'
 
 -- | Remove entity from archetype (swap-remove with O(log N) lookup).
 removeFromArchetype :: EntityId -> ArchetypeId -> World -> World
@@ -590,6 +598,9 @@ infixl 8 range as ..
 addToArchetypeWithComponent :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> String -> Foreign -> World -> World
 addToArchetypeWithComponent entityId archId newMask existingComponents newLabel newComponentValue world =
   let
+    -- Check if this is a new archetype (for cache invalidation)
+    isNewArchetype = not $ Map.member archId world.archetypes
+
     -- Get or create archetype with component storage (compute labels from ID for new archetypes)
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
@@ -624,8 +635,13 @@ addToArchetypeWithComponent entityId archId newMask existingComponents newLabel 
       , storage: updatedStorage
       }
     updatedArchetypes = Map.insert archId updatedArch world.archetypes
+
+    -- Increment structural version if we created a new archetype (invalidates query cache)
+    world' = world { archetypes = updatedArchetypes }
   in
-    world { archetypes = updatedArchetypes }
+    if isNewArchetype
+      then incrementStructuralVersion world'
+      else world'
 
 -- | Parse archetype ID into component labels.
 -- |

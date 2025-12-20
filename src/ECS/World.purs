@@ -16,6 +16,8 @@ module ECS.World
   , ArchetypeId
   , ComponentMask
   , ComponentRegistry
+  , QueryCacheKey
+  , CachedQueryResult
   , emptyWorld
   , spawnEntity
   , despawnEntity
@@ -30,6 +32,9 @@ module ECS.World
   , maskHasAny
   , maskAddBit
   , maskRemoveBit
+  -- Query cache helpers
+  , makeQueryCacheKey
+  , incrementStructuralVersion
   -- Pure versions (for internal use)
   , spawnEntityPure
   , despawnEntityPure
@@ -72,6 +77,20 @@ type ComponentRegistry =
 -- | Components are sorted alphabetically for consistency.
 type ArchetypeId = String
 
+-- | Key for query cache lookup.
+-- |
+-- | Uniquely identifies a query by its required and excluded component masks.
+type QueryCacheKey = String  -- Format: "req:N,exc:M" where N,M are masks
+
+-- | Cached query result with version tracking.
+-- |
+-- | Contains matching archetype IDs computed at a specific structural version.
+-- | When structuralVersion changes, cache entries become stale.
+type CachedQueryResult =
+  { matchingArchetypes :: Array ArchetypeId
+  , version :: Int
+  }
+
 -- | World contains all ECS state.
 -- |
 -- | Structure:
@@ -79,11 +98,15 @@ type ArchetypeId = String
 -- | - archetypes: Type-erased archetype storage (Map ArchetypeId Foreign)
 -- | - entityLocations: Tracks which archetype contains each entity
 -- | - componentRegistry: Maps component labels to bit positions for fast matching
+-- | - structuralVersion: Incremented on archetype changes (for cache invalidation)
+-- | - queryCache: Cached query results (archetype matching)
 type World =
   { entities :: EntityManager
   , archetypes :: Map ArchetypeId Archetype
   , entityLocations :: Map Int ArchetypeId
   , componentRegistry :: ComponentRegistry
+  , structuralVersion :: Int
+  , queryCache :: Map QueryCacheKey CachedQueryResult
   }
 
 -- | Entity handle with phantom row type.
@@ -130,12 +153,16 @@ emptyArchetypeId = ""
 -- | - No archetypes (will create "" archetype on first spawn)
 -- | - Empty entity location tracking
 -- | - Empty component registry
+-- | - Structural version 0
+-- | - Empty query cache
 emptyWorld :: World
 emptyWorld =
   { entities: emptyEntityManager
   , archetypes: Map.empty
   , entityLocations: Map.empty
   , componentRegistry: { labelToBit: Map.empty, nextBit: 0 }
+  , structuralVersion: 0
+  , queryCache: Map.empty
   }
 
 -- | Spawn a new entity (monadic version).
@@ -398,6 +425,21 @@ maskRemoveBit mask bit =
   in if (mask .&. bitMask) /= 0
      then mask - bitMask  -- Equivalent to XOR when bit is set
      else mask
+
+-- | Create a cache key from required and excluded masks.
+-- |
+-- | Format: "req:N,exc:M" where N,M are the mask values.
+makeQueryCacheKey :: ComponentMask -> ComponentMask -> QueryCacheKey
+makeQueryCacheKey requiredMask excludedMask =
+  "req:" <> show requiredMask <> ",exc:" <> show excludedMask
+
+-- | Increment the structural version (invalidates query cache).
+-- |
+-- | Called when archetypes are created or modified structurally.
+-- | Does NOT clear the cache - stale entries are detected by version check.
+incrementStructuralVersion :: World -> World
+incrementStructuralVersion world =
+  world { structuralVersion = world.structuralVersion + 1 }
 
 
 -- Note: Using Tuple syntax for State monad pattern matching

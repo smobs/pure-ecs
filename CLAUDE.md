@@ -328,6 +328,7 @@ gameLoop = do
 - Swap-remove: O(1) array removal instead of O(N) filter
 - Bitmask archetype matching: O(1) per archetype instead of O(C) set operations
 - Cached archetype labels: O(log N) Set lookup instead of O(N) string parsing
+- Query caching: Repeated queries skip archetype matching entirely
 
 **Optimization tips**:
 - Batch entity creation
@@ -416,7 +417,6 @@ Run: `spago test`
 ## Future Enhancements
 
 - Parallel system execution (access patterns ready)
-- Query caching
 - Save/load world state
 - System dependency graph
 - Hot-reloading systems
@@ -500,6 +500,12 @@ This release focuses on performance optimizations. **No code changes required** 
 - Each archetype caches its component labels as a Set
 - Avoids repeated string parsing of archetype IDs
 
+**Query Caching** (Phase 4.1):
+- Repeated queries: **O(A) → O(1)** for archetype matching (A = archetype count)
+- Caches list of matching archetype IDs per query signature
+- Cache invalidated when new archetypes are created (structuralVersion changes)
+- Systems automatically use cached queries via `queryFor` and `query`
+
 **Before (3.1.0)**:
 ```
 Finding entity in archetype: O(N) linear search via findIndex
@@ -514,6 +520,7 @@ Finding entity in archetype: O(log N) Map.lookup
 Removing entity: O(1) swap-remove + O(log N) map update
 Query archetype filter: O(1) bitmask check per archetype
 hasComponent check: O(log N) Set.member lookup
+Repeated query archetype filter: O(1) cache lookup (skips matching entirely)
 ```
 
 ### Impact
@@ -526,6 +533,7 @@ hasComponent check: O(log N) Set.member lookup
 | hasComponent | O(N) parse + search | O(log N) Set lookup | ~5-10x faster |
 | Query iteration | O(N) per entity | O(log N) per entity | ~5-10x for large archetypes |
 | Query archetype filter | O(C) per archetype | O(1) per archetype | ~C× faster filtering |
+| Repeated query matching | O(A) | O(1) cache hit | ~A× faster for stable worlds |
 
 ### Upgrade Steps
 
@@ -545,13 +553,15 @@ type Archetype =
   }
 ```
 
-And `World` includes a new component registry:
+And `World` includes new fields:
 ```purescript
 type World =
   { entities :: EntityManager
   , archetypes :: Map ArchetypeId Archetype
   , entityLocations :: Map Int ArchetypeId
   , componentRegistry :: ComponentRegistry  -- NEW: maps labels to bit positions
+  , structuralVersion :: Int                -- NEW: incremented on archetype changes
+  , queryCache :: Map QueryCacheKey CachedQueryResult  -- NEW: cached query results
   }
 ```
 

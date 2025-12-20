@@ -15,6 +15,7 @@ module ECS.Query
   , query
   , without
   , runQuery
+  , runQueryCached
   , forQuery
   , mapQuery
   , class ExtractLabels
@@ -34,7 +35,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple.Nested (type (/\), (/\))
 import ECS.Entity (EntityId, entityIndex)
-import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, wrapEntity, maskContains, maskHasAny)
+import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, CachedQueryResult, wrapEntity, maskContains, maskHasAny, makeQueryCacheKey)
 import ECS.Internal.ComponentStorage as CS
 import Prim.Row (class Cons, class Lacks)
 import Prim.RowList (class RowToList, RowList)
@@ -212,6 +213,90 @@ archetypeMatchesMask :: ComponentMask -> ComponentMask -> ComponentMask -> Boole
 archetypeMatchesMask archMask requiredMask excludedMask =
   maskContains archMask requiredMask &&
   not (maskHasAny archMask excludedMask)
+
+-- | Execute a query with caching, returning results and updated world.
+-- |
+-- | This version caches the list of matching archetype IDs. When the same
+-- | query is run again and the world's structural version hasn't changed,
+-- | it skips archetype matching and uses the cached list.
+-- |
+-- | Cache invalidation: The cache is invalidated when structuralVersion changes,
+-- | which happens when new archetypes are created.
+-- |
+-- | Returns: Query results and the world (with updated cache if needed)
+runQueryCached :: forall required excluded rl.
+  RowToList required rl =>
+  ExtractLabels rl =>
+  ReadComponents rl required =>
+  Query required excluded ->
+  World ->
+  { results :: Array (QueryResult required), world :: World }
+runQueryCached (Query q) world =
+  let
+    -- Convert labels to masks
+    requiredResult = labelsToMaskStrict q.requiredLabels world
+    excludedMask = labelsToMask q.excludedLabels world
+  in
+    case requiredResult of
+      Nothing -> { results: [], world }  -- Required component not registered
+      Just requiredMask ->
+        let
+          -- Create cache key
+          cacheKey = makeQueryCacheKey requiredMask excludedMask
+
+          -- Check cache
+          cacheResult = checkCache cacheKey world
+
+          -- Get matching archetype IDs (from cache or compute)
+          { matchingArchIds, world': worldAfterCache } = case cacheResult of
+            Just archIds ->
+              -- Cache hit! Use cached archetype IDs
+              { matchingArchIds: archIds, world': world }
+            Nothing ->
+              -- Cache miss - compute and cache
+              let
+                archetypes = Map.toUnfoldable world.archetypes :: Array _
+                archIds = foldl (\acc (archId /\ arch) ->
+                  if archetypeMatchesMask arch.mask requiredMask excludedMask
+                    then acc <> [archId]
+                    else acc
+                ) [] archetypes
+                -- Update cache
+                newCacheEntry = { matchingArchetypes: archIds, version: world.structuralVersion }
+                updatedCache = Map.insert cacheKey newCacheEntry world.queryCache
+              in
+                { matchingArchIds: archIds
+                , world': world { queryCache = updatedCache }
+                }
+
+          -- Extract results from matching archetypes
+          results = foldl (\acc archId ->
+            case Map.lookup archId worldAfterCache.archetypes of
+              Nothing -> acc  -- Archetype doesn't exist (shouldn't happen with valid cache)
+              Just arch ->
+                let archResults = extractFromArchetypeCached archId arch worldAfterCache
+                in acc <> archResults
+          ) [] matchingArchIds
+        in
+          { results, world: worldAfterCache }
+  where
+    -- Check if we have a valid cached result
+    checkCache :: QueryCacheKey -> World -> Maybe (Array ArchetypeId)
+    checkCache key w =
+      case Map.lookup key w.queryCache of
+        Nothing -> Nothing
+        Just cached ->
+          if cached.version == w.structuralVersion
+            then Just cached.matchingArchetypes
+            else Nothing  -- Stale cache entry
+
+    -- Extract query results from a single archetype (using archetype ID directly)
+    extractFromArchetypeCached :: ArchetypeId -> Archetype -> World -> Array (QueryResult required)
+    extractFromArchetypeCached archId arch world' =
+      map (\entityId ->
+        let components = readComponents (Proxy :: Proxy rl) archId entityId world'
+        in { entity: wrapEntity entityId, components }
+      ) arch.entities
 
 -- | Apply a callback to each query result, collecting the return values.
 -- |
