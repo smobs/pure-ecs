@@ -21,6 +21,7 @@ module ECS.Internal.ComponentStorage
   , arrayFromSingleton
   , arrayRemoveAt
   , arraySwapRemoveAt
+  , arrayUpdateAt
   , componentToForeign
   , componentFromForeign
   ) where
@@ -158,3 +159,14 @@ arraySwapRemoveAt idx arr =
          case Array.updateAt idx lastElem arr of
            Nothing -> arr  -- Shouldn't happen
            Just swapped -> Array.take lastIdx swapped
+
+-- | Replace the element at `idx` with a new value.
+-- |
+-- | Returns the array unchanged if the index is out of bounds. This is the
+-- | in-place column write used by setComponentPure to update component
+-- | values without triggering archetype migration.
+arrayUpdateAt :: forall a. Int -> a -> ComponentArray -> ComponentArray
+arrayUpdateAt idx newValue arr =
+  case Array.updateAt idx (unsafeToForeign newValue) arr of
+    Nothing -> arr
+    Just updated -> updated

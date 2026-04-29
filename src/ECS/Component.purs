@@ -24,6 +24,7 @@ module ECS.Component
   , addComponentPure
   , removeComponentPure
   , getComponentPure
+  , setComponentPure
   ) where
 
 import Prelude
@@ -346,6 +347,50 @@ getComponentPure labelProxy entity world =
                       Nothing -> Nothing
                       Just componentArray ->
                         map CS.componentFromForeign (index componentArray pos)
+
+-- | In-place component value update — no archetype migration.
+-- |
+-- | The Cons constraint proves the component already exists, so the entity's
+-- | row type is invariant. We do a single Array.updateAt on the component
+-- | column at the entity's row index. No structural change → no cache
+-- | invalidation, no archetype bookkeeping.
+-- |
+-- | Returns the world unchanged if the entity is invalid or its archetype/
+-- | column/index is unexpectedly missing — these cannot happen for a valid
+-- | Entity r whose component label is in r, but we degrade gracefully.
+setComponentPure :: forall r label a trash.
+  IsSymbol label =>
+  Cons label a trash r =>
+  Proxy label ->
+  a ->
+  Entity r ->
+  World ->
+  { world :: World, entity :: Entity r }
+setComponentPure labelProxy newValue entity world =
+  let
+    labelStr = reflectSymbol labelProxy
+    entityId = unEntity entity
+    idx      = entityIndex entityId
+  in
+    if not (validateEntity entityId world.entities) then
+      { world, entity }
+    else case Map.lookup idx world.entityLocations of
+      Nothing -> { world, entity }
+      Just archId -> case Map.lookup archId world.archetypes of
+        Nothing -> { world, entity }
+        Just arch -> case Map.lookup idx arch.entityPositions of
+          Nothing -> { world, entity }
+          Just pos -> case CS.lookup labelStr arch.storage of
+            Nothing -> { world, entity }
+            Just column ->
+              let
+                newColumn  = CS.arrayUpdateAt pos newValue column
+                newStorage = CS.insert labelStr newColumn arch.storage
+                newArch    = arch { storage = newStorage }
+              in
+                { world: world { archetypes = Map.insert archId newArch world.archetypes }
+                , entity
+                }
 
 -- | Check if an entity has a specific component (runtime check).
 -- |
