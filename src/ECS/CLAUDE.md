@@ -242,19 +242,26 @@ gameLoop = do
 
 ## Performance Characteristics
 
+A = archetypes, N = entities in matching archetypes, C = required components per query.
+
 | Operation | Time | Space | Notes |
 |-----------|------|-------|-------|
-| spawnEntity | O(1) amortized | O(1) | Free list for recycling |
-| addComponent | O(log A + C) | O(C) | A=archetypes, C=components |
-| removeComponent | O(log A + C) | O(1) | Archetype migration |
-| query | O(A × N) | O(N) | A=matching archetypes, N=entities |
-| runSystem | O(system) | O(system) | Depends on system complexity |
+| spawnEntity | O(log A) | O(1) | Free list for recycling |
+| addComponent | O(log A + N) | O(N) | Archetype migration |
+| removeComponent | O(log A + N) | O(N) | Archetype migration |
+| **setComponent (in-place value update)** | **O(log A + log N)** | **O(1)** | **Single column write — no migration** |
+| getComponent | O(log A + log N) | O(1) | |
+| query (cached) | O(N + C·N) | O(N) | One column read per (entity, component) |
+| query (uncached) | O(A + N + C·N) | O(N) | Plus initial archetype filter |
+| runSystem | depends on body | depends | |
+
+**Hot-path principle:** `updateComponent`/`modifyComponent` route through `setComponentPure` internally — value writes never trigger archetype migration. Only `addComponent`/`removeComponent` pay migration cost.
 
 **Optimization tips**:
+- Prefer `updateComponent_`/`modifyComponent_` over remove+add for value updates
 - Batch entity creation
 - Query once, iterate many times
-- Use archetype-aware algorithms
-- Profile before optimizing
+- Profile before optimizing — `bench/` has a harness
 
 ## Migration Guide
 
