@@ -5,7 +5,7 @@ const path = require('path');
 
 // Create entry point that imports and runs the main function
 const entryPointContent = `
-import * as WebDemo from './output/ECS.Examples.WebDemo/index.js';
+import * as WebDemo from './output-es/ECS.Examples.WebDemo/index.js';
 
 export const main = WebDemo.main;
 `;

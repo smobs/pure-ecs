@@ -11,7 +11,7 @@
     "build": "spago build",
     "test": "spago test",
     "docs": "spago docs",
-    "clean": "rm -rf output .spago",
+    "clean": "rm -rf output output-es .spago",
     "build:demo": "spago build && node build-demo.js",
     "serve": "python3 -m http.server 8000 --directory docs"
   },
@@ -25,6 +25,7 @@
   "devDependencies": {
     "esbuild": "^0.19.0",
     "purescript": "^0.15.15",
+    "purs-backend-es": "^1.4.3",
     "spago": "next"
   }
 }
