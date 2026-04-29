@@ -27,6 +27,7 @@ module ECS.Query
 import Prelude
 
 import Data.Array (foldl)
+import Data.Array as Array
 import Data.Foldable (foldl) as F
 import Data.Int.Bits (shl)
 import Data.Map as Map
@@ -135,51 +136,26 @@ runQuery (Query q) world =
       Nothing -> []  -- Required component not registered, no matches possible
       Just requiredMask ->
         let
-          -- Get all archetypes from world
-          archetypes = Map.toUnfoldable world.archetypes :: Array _
-
-          -- Filter to matching archetypes using O(1) bitmask operations
-          matchingArchs = foldl (\acc (_ /\ arch) ->
-            if archetypeMatchesMask arch.mask requiredMask excludedMask
-              then acc <> [arch]
-              else acc
-          ) [] archetypes
-
-          -- Extract results from each matching archetype
-          results = foldl (\acc arch ->
-            let archResults = extractFromArchetype arch world
-            in acc <> archResults
-          ) [] matchingArchs
-        in results
+          -- Filter archetypes whose mask matches required/excluded constraints.
+          -- Thread the (archId, arch) pair through to avoid an O(A) reverse
+          -- lookup per match (was O(A^2) total).
+          matches :: Array (ArchetypeId /\ Archetype)
+          matches = Array.filter
+            (\(_ /\ arch) -> archetypeMatchesMask arch.mask requiredMask excludedMask)
+            (Map.toUnfoldable world.archetypes)
+        in
+          Array.concatMap
+            (\(archId /\ arch) -> extractFromArchetype archId arch world)
+            matches
   where
     -- Extract query results from a single archetype
-    extractFromArchetype :: Archetype -> World -> Array (QueryResult required)
-    extractFromArchetype arch world' =
-      let
-        -- Find archetype ID for reading (needed by readComponents)
-        archId = findArchetypeId arch world'
-
-        -- Build result for each entity in archetype
-        entityResults = map (\entityId ->
-          let
-            -- Read components for this entity
-            components = readComponents (Proxy :: Proxy rl) archId entityId world'
-          in
-            { entity: wrapEntity entityId
-            , components
-            }
-        ) arch.entities
-      in entityResults
-
-    -- Find archetype ID from archetype (reverse lookup)
-    findArchetypeId :: Archetype -> World -> ArchetypeId
-    findArchetypeId arch w =
-      let
-        archs = Map.toUnfoldable w.archetypes :: Array _
-        found = foldl (\acc (id /\ a) ->
-          if a.mask == arch.mask then id else acc
-        ) "" archs
-      in found
+    extractFromArchetype :: ArchetypeId -> Archetype -> World -> Array (QueryResult required)
+    extractFromArchetype archId arch world' =
+      map (\entityId ->
+        { entity: wrapEntity entityId
+        , components: readComponents (Proxy :: Proxy rl) archId entityId world'
+        }
+      ) arch.entities
 
 -- | Convert a set of labels to a bitmask using the world's registry.
 -- | Returns Nothing if any label is not registered (meaning no matches possible).
@@ -253,14 +229,14 @@ runQueryCached (Query q) world =
               -- Cache hit! Use cached archetype IDs
               { matchingArchIds: archIds, world': world }
             Nothing ->
-              -- Cache miss - compute and cache
+              -- Cache miss - compute and cache (single-pass mapMaybe)
               let
-                archetypes = Map.toUnfoldable world.archetypes :: Array _
-                archIds = foldl (\acc (archId /\ arch) ->
-                  if archetypeMatchesMask arch.mask requiredMask excludedMask
-                    then acc <> [archId]
-                    else acc
-                ) [] archetypes
+                archIds = Array.mapMaybe
+                  (\(archId /\ arch) ->
+                      if archetypeMatchesMask arch.mask requiredMask excludedMask
+                        then Just archId
+                        else Nothing)
+                  (Map.toUnfoldable world.archetypes)
                 -- Update cache
                 newCacheEntry = { matchingArchetypes: archIds, version: world.structuralVersion }
                 updatedCache = Map.insert cacheKey newCacheEntry world.queryCache
@@ -269,14 +245,12 @@ runQueryCached (Query q) world =
                 , world': world { queryCache = updatedCache }
                 }
 
-          -- Extract results from matching archetypes
-          results = foldl (\acc archId ->
-            case Map.lookup archId worldAfterCache.archetypes of
-              Nothing -> acc  -- Archetype doesn't exist (shouldn't happen with valid cache)
-              Just arch ->
-                let archResults = extractFromArchetypeCached archId arch worldAfterCache
-                in acc <> archResults
-          ) [] matchingArchIds
+          -- Extract results from matching archetypes (single-pass concatMap)
+          results = Array.concatMap
+            (\archId -> case Map.lookup archId worldAfterCache.archetypes of
+                Nothing   -> []
+                Just arch -> extractFromArchetypeCached archId arch worldAfterCache)
+            matchingArchIds
         in
           { results, world: worldAfterCache }
   where
