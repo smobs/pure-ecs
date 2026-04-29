@@ -37,7 +37,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
-import ECS.World (World, Entity, ArchetypeId, ComponentMask, unEntity, wrapEntity, getOrCreateComponentMask, maskAddBit, maskRemoveBit, incrementStructuralVersion)
+import ECS.World (World, Entity, ArchetypeId, unEntity, wrapEntity, getOrCreateComponentMask, maskAddBit, maskRemoveBit, incrementStructuralVersion)
 import ECS.Internal.ComponentStorage (ComponentStorage, arraySwapRemoveAt)
 import ECS.Internal.ComponentStorage as CS
 import Foreign (Foreign)
@@ -432,9 +432,7 @@ moveEntityWithComponent entityId oldArchId newArchId label componentValue world 
 
     world1 = removeFromArchetype entityId oldArchId world
 
-    -- Add to new archetype with ALL components (existing + new) and new mask.
-    -- ArchetypeId == ComponentMask, so we pass newArchId as both key and mask.
-    world2 = addToArchetypeWithComponent entityId newArchId newArchId newLabels existingComponents label componentValue world1
+    world2 = addToArchetypeWithComponent entityId newArchId newLabels existingComponents label componentValue world1
 
     updatedLocations = Map.insert idx newArchId world2.entityLocations
   in
@@ -474,8 +472,7 @@ moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
 
     world1 = removeFromArchetype entityId oldArchId world
 
-    -- ArchetypeId == ComponentMask, so we pass newArchId as both key and mask.
-    world2 = addToArchetypeWithAllComponents entityId newArchId newArchId newLabels filteredComponents world1
+    world2 = addToArchetypeWithAllComponents entityId newArchId newLabels filteredComponents world1
 
     updatedLocations = Map.insert idx newArchId world2.entityLocations
   in
@@ -483,17 +480,17 @@ moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
 
 -- | Add entity to archetype with multiple components (used by removeComponent).
 -- |
--- | Both `newMask` and `newLabels` are precomputed by the caller, so this
--- | helper does no string parsing.
+-- | `newLabels` is precomputed by the caller, so this helper does no string
+-- | parsing. The archetype id IS the bitmask (ArchetypeId = ComponentMask),
+-- | so the same value is used as the map key and as the new archetype's mask.
 addToArchetypeWithAllComponents
   :: EntityId
   -> ArchetypeId
-  -> ComponentMask
   -> Set String
   -> ComponentStorage
   -> World
   -> World
-addToArchetypeWithAllComponents entityId archId newMask newLabels allComponents world =
+addToArchetypeWithAllComponents entityId archId newLabels allComponents world =
   let
     isNewArchetype = not $ Map.member archId world.archetypes
 
@@ -502,7 +499,7 @@ addToArchetypeWithAllComponents entityId archId newMask newLabels allComponents 
       Nothing ->
         { entities: []
         , entityPositions: Map.empty
-        , mask: newMask
+        , mask: archId
         , labels: newLabels
         , storage: CS.empty
         }
@@ -613,22 +610,22 @@ extractAllComponentsForEntity idx storage =
 
 -- | Add entity to archetype with components (both existing and new).
 -- |
--- | newMask: Precomputed bitmask for the new archetype
 -- | newLabels: Precomputed label set for the new archetype
 -- | existingComponents: ComponentStorage of component values to preserve (from old archetype)
 -- | newLabel: new component label to add
 -- | newComponentValue: new component value to add
+-- |
+-- | The archetype id IS the bitmask, so it's used as both map key and mask.
 addToArchetypeWithComponent
   :: EntityId
   -> ArchetypeId
-  -> ComponentMask
   -> Set String
   -> ComponentStorage
   -> String
   -> Foreign
   -> World
   -> World
-addToArchetypeWithComponent entityId archId newMask newLabels existingComponents newLabel newComponentValue world =
+addToArchetypeWithComponent entityId archId newLabels existingComponents newLabel newComponentValue world =
   let
     isNewArchetype = not $ Map.member archId world.archetypes
 
@@ -637,7 +634,7 @@ addToArchetypeWithComponent entityId archId newMask newLabels existingComponents
       Nothing ->
         { entities: []
         , entityPositions: Map.empty
-        , mask: newMask
+        , mask: archId
         , labels: newLabels
         , storage: CS.empty
         }
