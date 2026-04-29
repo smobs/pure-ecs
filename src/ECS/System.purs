@@ -25,7 +25,7 @@ import Prelude (Unit, unit, ($))
 import Control.Monad.State (State, state, runState)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponentPure, removeComponentPure, getComponentPure)
+import ECS.Component (getComponentPure, setComponentPure)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)
 import ECS.Query (runQueryCached) as Q
 import ECS.Query as ECSQuery
@@ -156,11 +156,8 @@ updateComponent :: forall label a r r' writes trash.
   Entity r ->
   System r' writes (Entity r)
 updateComponent label newValue entity = state \world ->
-  let -- Remove component (entity type: r -> r')
-      {world: world1, entity: entity'} = removeComponentPure label entity world
-      -- Add component back with new value (entity type: r' -> r)
-      {world: world2, entity: entity''} = addComponentPure label newValue entity' world1
-  in Tuple entity'' world2
+  let { world: world' } = setComponentPure label newValue entity world
+  in Tuple entity world'
 
 -- | Fire-and-forget variant of updateComponent.
 -- |
@@ -194,11 +191,8 @@ updateComponent_ :: forall label a r r' writes trash.
   Entity r ->
   System r' writes Unit
 updateComponent_ label newValue entity = state \world ->
-  let -- Remove component (entity type: r -> r')
-      {world: world1, entity: entity'} = removeComponentPure label entity world
-      -- Add component back with new value (entity type: r' -> r)
-      {world: world2, entity: _} = addComponentPure label newValue entity' world1
-  in Tuple unit world2
+  let { world: world' } = setComponentPure label newValue entity world
+  in Tuple unit world'
 
 -- | Modify a component using a transformation function (read-modify-write).
 -- |
@@ -246,9 +240,8 @@ modifyComponent proxy f entity = state \world ->
   case getComponentPure proxy entity world of
     Nothing -> Tuple entity world
     Just value ->
-      let {world: w1, entity: e1} = removeComponentPure proxy entity world
-          {world: w2, entity: e2} = addComponentPure proxy (f value) e1 w1
-      in Tuple e2 w2
+      let { world: world' } = setComponentPure proxy (f value) entity world
+      in Tuple entity world'
 
 -- | Fire-and-forget variant of modifyComponent.
 -- |
@@ -280,6 +273,5 @@ modifyComponent_ proxy f entity = state \world ->
   case getComponentPure proxy entity world of
     Nothing -> Tuple unit world
     Just value ->
-      let {world: w1, entity: e1} = removeComponentPure proxy entity world
-          {world: w2, entity: _} = addComponentPure proxy (f value) e1 w1
-      in Tuple unit w2
+      let { world: world' } = setComponentPure proxy (f value) entity world
+      in Tuple unit world'
