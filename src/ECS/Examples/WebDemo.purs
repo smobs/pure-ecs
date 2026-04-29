@@ -8,9 +8,9 @@ module ECS.Examples.WebDemo where
 import Prelude
 
 import Control.Monad.State (State, execState)
-import Data.Array (filter, length)
+import Data.Array (filter, length, range)
 import Data.Maybe (Maybe(..))
-import Data.Int (toNumber)
+import Data.Int (round, toNumber)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..))
 import ECS.Component ((<+>), (:=))
@@ -50,6 +50,7 @@ foreign import readRef :: forall a. Ref a -> Effect a
 foreign import writeRef :: forall a. Ref a -> a -> Effect Unit
 foreign import getCanvasContext :: Effect CanvasRenderingContext2D
 foreign import setControlCallbacks :: (Boolean -> Effect Unit) -> Effect Unit -> (Int -> Effect Unit) -> Effect Unit
+foreign import performanceNow :: Effect Number
 
 -- ============================================================================
 -- Systems
@@ -178,40 +179,44 @@ renderWorld ctx world = do
 -- World Setup
 -- ============================================================================
 
+-- Stress-mode entity count. Bumping this is the easy way to push the demo.
+stressEntityCount :: Int
+stressEntityCount = 1000
+
 setupWorld :: World
 setupWorld = execState setupEntities emptyWorld
   where
     setupEntities :: State World Unit
-    setupEntities = do
-      -- Entity 1: Red ball with damage (will die slowly)
-      void $ spawnEntity
-        <+> (Proxy :: _ "position") := { x: 100.0, y: 100.0 }
-        <+> (Proxy :: _ "velocity") := { x: 50.0, y: 30.0 }
-        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
-        <+> (Proxy :: _ "damage") := { amount: 2 }
-        <+> (Proxy :: _ "visual") := { color: "#e74c3c", radius: 15.0 }
-
-      -- Entity 2: Green ball, no damage (survives)
-      void $ spawnEntity
-        <+> (Proxy :: _ "position") := { x: 300.0, y: 200.0 }
-        <+> (Proxy :: _ "velocity") := { x: -30.0, y: 40.0 }
-        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
-        <+> (Proxy :: _ "visual") := { color: "#2ecc71", radius: 20.0 }
-
-      -- Entity 3: Blue ball with moderate damage
-      void $ spawnEntity
-        <+> (Proxy :: _ "position") := { x: 500.0, y: 150.0 }
-        <+> (Proxy :: _ "velocity") := { x: -40.0, y: -35.0 }
-        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
-        <+> (Proxy :: _ "damage") := { amount: 3 }
-        <+> (Proxy :: _ "visual") := { color: "#3498db", radius: 12.0 }
-
-      -- Entity 4: Yellow ball, fast, no damage
-      void $ spawnEntity
-        <+> (Proxy :: _ "position") := { x: 200.0, y: 300.0 }
-        <+> (Proxy :: _ "velocity") := { x: 60.0, y: -50.0 }
-        <+> (Proxy :: _ "health") := { current: 100, max: 100 }
-        <+> (Proxy :: _ "visual") := { color: "#f39c12", radius: 18.0 }
+    setupEntities =
+      for_ (range 0 (stressEntityCount - 1)) \i -> do
+        let xf     = toNumber (i `mod` 60) * 10.0 + 20.0
+            yf     = toNumber (i `div` 60) * 10.0 + 20.0
+            vxf    = toNumber ((i * 17) `mod` 80) - 40.0
+            vyf    = toNumber ((i * 23) `mod` 80) - 40.0
+            hp     = 50 + (i `mod` 50)
+            dmg    = (i `mod` 4)
+            hue    = i `mod` 6
+            color  = case hue of
+              0 -> "#e74c3c"
+              1 -> "#2ecc71"
+              2 -> "#3498db"
+              3 -> "#f39c12"
+              4 -> "#9b59b6"
+              _ -> "#1abc9c"
+            radius = toNumber (4 + (i `mod` 4))
+        if dmg > 0 then
+          void $ spawnEntity
+            <+> (Proxy :: _ "position") := { x: xf, y: yf }
+            <+> (Proxy :: _ "velocity") := { x: vxf, y: vyf }
+            <+> (Proxy :: _ "health")   := { current: hp, max: 100 }
+            <+> (Proxy :: _ "damage")   := { amount: dmg }
+            <+> (Proxy :: _ "visual")   := { color, radius }
+        else
+          void $ spawnEntity
+            <+> (Proxy :: _ "position") := { x: xf, y: yf }
+            <+> (Proxy :: _ "velocity") := { x: vxf, y: vyf }
+            <+> (Proxy :: _ "health")   := { current: hp, max: 100 }
+            <+> (Proxy :: _ "visual")   := { color, radius }
 
 -- ============================================================================
 -- Main Loop
@@ -284,32 +289,40 @@ main = do
           let newFrameCount = state.frameCount + 1
               shouldUpdate = newFrameCount >= state.framesPerUpdate
 
-          -- Only update game state every N frames
-          let {world: newWorld, stats, newTick} =
-                if shouldUpdate
-                  then let {world: w, stats: s} = gameTick 1.0 state.world
-                       in {world: w, stats: s, newTick: state.tickCount + 1}
-                  else {world: state.world, stats: {moved: 0, killed: 0, cleaned: 0}, newTick: state.tickCount}
+          -- Time the tick
+          tickResult <- if shouldUpdate
+            then do
+              t0 <- performanceNow
+              let { world: w, stats: s } = gameTick 1.0 state.world
+              t1 <- performanceNow
+              pure { world: w, stats: s, newTick: state.tickCount + 1, tickMs: t1 - t0 }
+            else
+              pure { world: state.world, stats: { moved: 0, killed: 0, cleaned: 0 }, newTick: state.tickCount, tickMs: 0.0 }
 
+          let newWorld = tickResult.world
               newState = state
                 { world = newWorld
-                , tickCount = newTick
+                , tickCount = tickResult.newTick
                 , frameCount = if shouldUpdate then 0 else newFrameCount
                 }
+
+          -- Log tick timing to console for DevTools inspection
+          when shouldUpdate do
+            log $ "tick " <> show tickResult.newTick <> ": " <> show tickResult.tickMs <> " ms (" <> show (countEntities tickResult.world) <> " entities)"
 
           -- Render every frame for smooth animation
           renderWorld ctx newWorld
 
           -- Draw stats panel with background
-          drawRect ctx 5.0 5.0 200.0 130.0 "#000000aa"
+          drawRect ctx 5.0 5.0 200.0 150.0 "#000000aa"
           drawText ctx ("=== ECS SIMULATION ===") 15.0 25.0 "#ffffff"
           drawText ctx ("Tick: " <> show newState.tickCount) 15.0 45.0 "#00ff00"
           drawText ctx ("Entities: " <> show (countEntities newWorld)) 15.0 65.0 "#00ff00"
-          drawText ctx ("") 15.0 85.0 "#ffffff"
-          drawText ctx ("Systems this tick:") 15.0 85.0 "#ffaa00"
-          drawText ctx ("  Physics: " <> show stats.moved <> " updated") 15.0 100.0 "#ffffff"
-          drawText ctx ("  Damage: " <> show stats.killed <> " damaged") 15.0 115.0 "#ffffff"
-          drawText ctx ("  Cleanup: " <> show stats.cleaned <> " removed") 15.0 130.0 "#ffffff"
+          drawText ctx ("Tick ms: " <> show (toNumber (round (tickResult.tickMs * 100.0)) / 100.0)) 15.0 85.0 "#ffaa00"
+          drawText ctx ("Systems this tick:") 15.0 105.0 "#ffaa00"
+          drawText ctx ("  Physics: " <> show tickResult.stats.moved <> " updated") 15.0 120.0 "#ffffff"
+          drawText ctx ("  Damage: " <> show tickResult.stats.killed <> " damaged") 15.0 135.0 "#ffffff"
+          drawText ctx ("  Cleanup: " <> show tickResult.stats.cleaned <> " removed") 15.0 150.0 "#ffffff"
 
           -- Save state
           writeRef stateRef newState
