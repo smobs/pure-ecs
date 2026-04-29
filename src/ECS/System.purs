@@ -130,15 +130,16 @@ queryFor = state \world ->
 
 -- | Update a component within a system.
 -- |
--- | This is implemented as remove-then-add to handle the type system properly.
+-- | Implemented via setComponentPure — a single column write at the entity's
+-- | row position. No archetype migration, no structural-version bump.
 -- | The component must exist (Cons proves it) and must be in the write set.
--- | Works cleanly with do-notation - no nested runSystem calls needed!
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
 -- | - Cons label a r' r: Proves component exists in entity
 -- | - Cons label a trash writes: Proves component is in write set
--- | - Lacks label r': After removal, component doesn't exist
+-- | - Lacks label r': API-preserving artefact from the previous remove-then-add
+-- |   implementation; harmless and satisfied automatically by valid callers
 -- |
 -- | Example:
 -- | ```purescript
@@ -196,14 +197,14 @@ updateComponent_ label newValue entity = state \world ->
 
 -- | Modify a component using a transformation function (read-modify-write).
 -- |
--- | This helper combines get + modify + update into a single operation,
--- | dramatically reducing verbosity for the common read-modify-write pattern.
+-- | Reads the existing value with getComponentPure, applies f, then writes
+-- | the result via setComponentPure (single column write — no migration).
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
--- | - Cons label a r' r: Component exists in entity and can be removed
+-- | - Cons label a r' r: Component exists in entity
 -- | - Cons label a trash writes: Component is in write set
--- | - Lacks label r': After removal, component doesn't exist
+-- | - Lacks label r': API-preserving artefact; harmless
 -- |
 -- | Returns:
 -- | - Updated entity: If component exists
