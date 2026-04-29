@@ -2,8 +2,6 @@ module Bench.ECS.Bench
   ( Scenario
   , spawn1k
   , queryAll1k
-  , update1k
-  , modify1k
   , fullTick1k
   ) where
 
@@ -61,12 +59,6 @@ queryAll1k =
   , build: buildWorld 1000
   , run: \w -> (runSystem movementSystem w).world
   }
-
-update1k :: Scenario
-update1k = queryAll1k { name = "update position via modifyComponent_ over 1000 entities" }
-
-modify1k :: Scenario
-modify1k = queryAll1k { name = "modify position over 1000 entities" }
 
 fullTick1k :: Scenario
 fullTick1k =
