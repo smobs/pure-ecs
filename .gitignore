@@ -1,8 +1,12 @@
 # PureScript
 output/
+output-es/
 .spago/
 .spago-work/
 generated-docs/
+
+# Benchmark artifacts
+bench/bench-out.mjs
 
 # Node
 node_modules/
