@@ -80,8 +80,10 @@ type ArchetypeId = ComponentMask
 
 -- | Key for query cache lookup.
 -- |
--- | Uniquely identifies a query by its required and excluded component masks.
-type QueryCacheKey = String  -- Format: "req:N,exc:M" where N,M are masks
+-- | (requiredMask, excludedMask) — uniquely identifies a query by its
+-- | required/excluded component masks. Tuple keys avoid the per-call
+-- | string allocation of a formatted key.
+type QueryCacheKey = Tuple ComponentMask ComponentMask
 
 -- | Cached query result with version tracking.
 -- |
@@ -429,10 +431,9 @@ maskRemoveBit mask bit =
 
 -- | Create a cache key from required and excluded masks.
 -- |
--- | Format: "req:N,exc:M" where N,M are the mask values.
+-- | Tuple keys avoid string allocation on every cache lookup.
 makeQueryCacheKey :: ComponentMask -> ComponentMask -> QueryCacheKey
-makeQueryCacheKey requiredMask excludedMask =
-  "req:" <> show requiredMask <> ",exc:" <> show excludedMask
+makeQueryCacheKey requiredMask excludedMask = Tuple requiredMask excludedMask
 
 -- | Increment the structural version (invalidates query cache).
 -- |
