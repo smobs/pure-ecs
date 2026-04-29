@@ -55,7 +55,7 @@ worldSpec = do
         let result = spawnEntityPure emptyWorld
             entityId = unEntity result.entity
             maybeArchId = Map.lookup (entityIndex entityId) result.world.entityLocations
-        maybeArchId `shouldEqual` Just ""
+        maybeArchId `shouldEqual` Just 0
 
       it "entityLocations updated correctly" do
         let r1 = spawnEntityPure emptyWorld
@@ -64,8 +64,8 @@ worldSpec = do
             idx2 = entityIndex (unEntity r2.entity)
             loc1 = Map.lookup idx1 r2.world.entityLocations
             loc2 = Map.lookup idx2 r2.world.entityLocations
-        loc1 `shouldEqual` Just ""
-        loc2 `shouldEqual` Just ""
+        loc1 `shouldEqual` Just 0
+        loc2 `shouldEqual` Just 0
 
     -- Entity Despawn Tests
     describe "Entity Despawn" do
@@ -132,7 +132,7 @@ worldSpec = do
         let result = spawnEntityPure emptyWorld
             idx = entityIndex (unEntity result.entity)
         -- Empty archetype should exist in world (checked by entityLocations)
-        Map.lookup idx result.world.entityLocations `shouldEqual` Just ""
+        Map.lookup idx result.world.entityLocations `shouldEqual` Just 0
 
       it "multiple entities in same archetype" do
         let r1 = spawnEntityPure emptyWorld
@@ -145,17 +145,17 @@ worldSpec = do
             loc2 = Map.lookup idx2 r3.world.entityLocations
             loc3 = Map.lookup idx3 r3.world.entityLocations
         -- All should be in empty archetype
-        loc1 `shouldEqual` Just ""
-        loc2 `shouldEqual` Just ""
-        loc3 `shouldEqual` Just ""
+        loc1 `shouldEqual` Just 0
+        loc2 `shouldEqual` Just 0
+        loc3 `shouldEqual` Just 0
 
       it "entityLocations tracks correct archetypes" do
         let r1 = spawnEntityPure emptyWorld
             r2 = spawnEntityPure r1.world
             idx1 = entityIndex (unEntity r1.entity)
             idx2 = entityIndex (unEntity r2.entity)
-        Map.lookup idx1 r2.world.entityLocations `shouldEqual` Just ""
-        Map.lookup idx2 r2.world.entityLocations `shouldEqual` Just ""
+        Map.lookup idx1 r2.world.entityLocations `shouldEqual` Just 0
+        Map.lookup idx2 r2.world.entityLocations `shouldEqual` Just 0
 
     -- Lifecycle Tests
     describe "Lifecycle Tests" do

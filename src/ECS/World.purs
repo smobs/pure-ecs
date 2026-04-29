@@ -71,11 +71,12 @@ type ComponentRegistry =
   , nextBit :: Int
   }
 
--- | Archetype ID derived from sorted component type names.
+-- | Archetype ID is the bitmask of component bits.
 -- |
--- | Example: "Position,Velocity" or "Health,Position,Velocity"
--- | Components are sorted alphabetically for consistency.
-type ArchetypeId = String
+-- | Two archetypes are the same iff they have the same set of components,
+-- | which the bitmask captures exactly. Keys in `world.archetypes` are masks.
+-- | This eliminates per-add/remove string parsing/sorting/joining.
+type ArchetypeId = ComponentMask
 
 -- | Key for query cache lookup.
 -- |
@@ -142,9 +143,9 @@ type Archetype =
   , storage :: ComponentStorage
   }
 
--- | Empty archetype ID for newly spawned entities.
+-- | Empty archetype ID for newly spawned entities (mask = 0, no components).
 emptyArchetypeId :: ArchetypeId
-emptyArchetypeId = ""
+emptyArchetypeId = 0
 
 -- | Create an empty world.
 -- |

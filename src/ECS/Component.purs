@@ -30,12 +30,11 @@ module ECS.Component
 import Prelude
 
 import Control.Monad.State (State, state, get)
-import Data.Array (elem, filter, findIndex, index, length, sort, take, updateAt, (:))
+import Data.Array (index, length, take, updateAt)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Set (Set)
 import Data.Set as Set
-import Data.String (Pattern(..), joinWith, split)
-import Data.String.Common (trim)
 import Data.Tuple (Tuple(..))
 import ECS.Entity (EntityId, entityIndex, validateEntity)
 import ECS.World (World, Entity, ArchetypeId, ComponentMask, unEntity, wrapEntity, getOrCreateComponentMask, maskAddBit, maskRemoveBit, incrementStructuralVersion)
@@ -158,33 +157,24 @@ addComponentPure :: forall r r' label a.
   { world :: World, entity :: Entity r' }
 addComponentPure labelProxy componentValue entity world =
   let
-    -- Extract label as string
     labelStr = reflectSymbol labelProxy
     entityId = unEntity entity
-    idx = entityIndex entityId
-
-    -- Validate entity exists
-    isValid = validateEntity entityId world.entities
+    idx      = entityIndex entityId
+    isValid  = validateEntity entityId world.entities
   in
     if not isValid then
-      -- Entity doesn't exist, return unchanged
-      -- Note: Type system can't prevent this runtime case
       { world, entity: wrapEntity entityId }
-    else
-      case Map.lookup idx world.entityLocations of
-        Nothing ->
-          -- Entity not in any archetype (shouldn't happen)
-          { world, entity: wrapEntity entityId }
-
-        Just oldArchId ->
-          let
-            -- Calculate new archetype ID
-            newArchId = addLabelToArchetype labelStr oldArchId
-
-            -- Move entity and store component data
-            result = moveEntityWithComponent entityId oldArchId newArchId labelStr (CS.componentToForeign componentValue) world
-          in
-            { world: result.world, entity: wrapEntity entityId }
+    else case Map.lookup idx world.entityLocations of
+      Nothing -> { world, entity: wrapEntity entityId }
+      Just oldArchId ->
+        let
+          -- Get or create bit for label, then derive new archetype mask directly.
+          -- ArchetypeId IS the mask, so no string parsing/sorting/joining required.
+          { bit: labelBit, world: worldWithBit } = getOrCreateComponentMask labelStr world
+          newArchId = maskAddBit oldArchId labelBit
+          result    = moveEntityWithComponent entityId oldArchId newArchId labelStr (CS.componentToForeign componentValue) worldWithBit
+        in
+          { world: result.world, entity: wrapEntity entityId }
 
 -- | Remove a component from an entity (monadic version).
 -- |
@@ -237,32 +227,26 @@ removeComponentPure :: forall r r' label a.
   { world :: World, entity :: Entity r' }
 removeComponentPure labelProxy entity world =
   let
-    -- Extract label as string
     labelStr = reflectSymbol labelProxy
     entityId = unEntity entity
-    idx = entityIndex entityId
-
-    -- Validate entity exists
-    isValid = validateEntity entityId world.entities
+    idx      = entityIndex entityId
+    isValid  = validateEntity entityId world.entities
   in
     if not isValid then
-      -- Entity doesn't exist, return unchanged
       { world, entity: wrapEntity entityId }
-    else
-      case Map.lookup idx world.entityLocations of
-        Nothing ->
-          -- Entity not in any archetype
-          { world, entity: wrapEntity entityId }
-
-        Just oldArchId ->
-          let
-            -- Calculate new archetype ID
-            newArchId = removeLabelFromArchetype labelStr oldArchId
-
-            -- Move entity to new archetype (pass label for mask computation)
-            result = moveEntityToArchetype entityId oldArchId newArchId labelStr world
-          in
-            { world: result.world, entity: wrapEntity entityId }
+    else case Map.lookup idx world.entityLocations of
+      Nothing -> { world, entity: wrapEntity entityId }
+      Just oldArchId ->
+        let
+          -- The bit for this label MUST already exist in the registry, since
+          -- the entity has the component; defensively fall back to 0 otherwise.
+          removedBit = case Map.lookup labelStr world.componentRegistry.labelToBit of
+            Just b  -> b
+            Nothing -> 0
+          newArchId = maskRemoveBit oldArchId removedBit
+          result    = moveEntityToArchetype entityId oldArchId newArchId labelStr world
+        in
+          { world: result.world, entity: wrapEntity entityId }
 
 -- | Get a component value from an entity (monadic version).
 -- |
@@ -406,52 +390,52 @@ hasComponent labelProxy entity world =
   let
     labelStr = reflectSymbol labelProxy
     entityId = unEntity entity
-    idx = entityIndex entityId
+    idx      = entityIndex entityId
   in
     case Map.lookup idx world.entityLocations of
       Nothing -> false
-      Just archId ->
-        -- Use cached labels from archetype (O(log N) Set lookup vs O(N) string parsing)
-        case Map.lookup archId world.archetypes of
-          Just arch -> Set.member labelStr arch.labels
-          Nothing -> archetypeContains labelStr archId  -- Fallback (shouldn't happen)
+      Just archId -> case Map.lookup archId world.archetypes of
+        Nothing   -> false
+        Just arch -> Set.member labelStr arch.labels
 
 -- Helper Functions
 
 -- | Move entity with a new component (adding component).
 -- |
 -- | Extracts existing components, then stores all components in new archetype.
-moveEntityWithComponent :: EntityId -> ArchetypeId -> ArchetypeId -> String -> Foreign -> World -> { world :: World }
+-- | Computes the new label set from the source archetype's cached labels rather
+-- | than parsing a string ID.
+moveEntityWithComponent
+  :: EntityId
+  -> ArchetypeId
+  -> ArchetypeId
+  -> String
+  -> Foreign
+  -> World
+  -> { world :: World }
 moveEntityWithComponent entityId oldArchId newArchId label componentValue world =
   let
     idx = entityIndex entityId
 
-    -- Get or create the bit for this component label
-    { bit: labelBit, world: worldWithBit } = getOrCreateComponentMask label world
+    sourceArch   = Map.lookup oldArchId world.archetypes
+    sourceLabels = case sourceArch of
+      Just a  -> a.labels
+      Nothing -> Set.empty
+    newLabels    = Set.insert label sourceLabels
 
-    -- Get the old archetype's mask (or 0 if doesn't exist)
-    oldMask = case Map.lookup oldArchId worldWithBit.archetypes of
-      Nothing -> 0
-      Just arch -> arch.mask
+    -- Extract existing components before removing using O(log N) position lookup.
+    existingComponents = case sourceArch of
+      Nothing -> CS.empty
+      Just arch -> case Map.lookup idx arch.entityPositions of
+        Nothing        -> CS.empty
+        Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
 
-    -- New mask includes the new component
-    newMask = maskAddBit oldMask labelBit
+    world1 = removeFromArchetype entityId oldArchId world
 
-    -- Extract existing components before removing using O(log N) position lookup
-    existingComponents = case Map.lookup oldArchId worldWithBit.archetypes of
-      Nothing -> CS.empty  -- No old archetype, no components
-      Just arch ->
-        case Map.lookup idx arch.entityPositions of
-          Nothing -> CS.empty  -- Entity not found in old archetype
-          Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
+    -- Add to new archetype with ALL components (existing + new) and new mask.
+    -- ArchetypeId == ComponentMask, so we pass newArchId as both key and mask.
+    world2 = addToArchetypeWithComponent entityId newArchId newArchId newLabels existingComponents label componentValue world1
 
-    -- Remove from old archetype
-    world1 = removeFromArchetype entityId oldArchId worldWithBit
-
-    -- Add to new archetype with ALL components (existing + new) and new mask
-    world2 = addToArchetypeWithComponent entityId newArchId newMask existingComponents label componentValue world1
-
-    -- Update entity location
     updatedLocations = Map.insert idx newArchId world2.entityLocations
   in
     { world: world2 { entityLocations = updatedLocations } }
@@ -460,65 +444,66 @@ moveEntityWithComponent entityId oldArchId newArchId label componentValue world 
 -- |
 -- | Extracts and preserves remaining components after removal.
 -- | Used by removeComponent to migrate entity to archetype without removed component.
-moveEntityToArchetype :: EntityId -> ArchetypeId -> ArchetypeId -> String -> World -> { world :: World }
+-- | Computes the new label set by deleting from the source archetype's cached labels.
+moveEntityToArchetype
+  :: EntityId
+  -> ArchetypeId
+  -> ArchetypeId
+  -> String
+  -> World
+  -> { world :: World }
 moveEntityToArchetype entityId oldArchId newArchId removedLabel world =
   let
     idx = entityIndex entityId
 
-    -- Get the bit for the removed label (should already exist)
-    removedBit = case Map.lookup removedLabel world.componentRegistry.labelToBit of
-      Just bit -> bit
-      Nothing -> 0  -- Shouldn't happen, but fallback
+    sourceArch   = Map.lookup oldArchId world.archetypes
+    sourceLabels = case sourceArch of
+      Just a  -> a.labels
+      Nothing -> Set.empty
+    newLabels    = Set.delete removedLabel sourceLabels
 
-    -- Get the old archetype's mask and remove the bit
-    oldMask = case Map.lookup oldArchId world.archetypes of
-      Nothing -> 0
-      Just arch -> arch.mask
-    newMask = maskRemoveBit oldMask removedBit
+    -- Extract existing components before removing using O(log N) position lookup.
+    existingComponents = case sourceArch of
+      Nothing -> CS.empty
+      Just arch -> case Map.lookup idx arch.entityPositions of
+        Nothing        -> CS.empty
+        Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
 
-    -- Extract existing components before removing using O(log N) position lookup
-    existingComponents = case Map.lookup oldArchId world.archetypes of
-      Nothing -> CS.empty  -- No old archetype, no components
-      Just arch ->
-        case Map.lookup idx arch.entityPositions of
-          Nothing -> CS.empty  -- Entity not found in old archetype
-          Just entityIdx -> extractAllComponentsForEntity entityIdx arch.storage
+    -- Drop the removed component column from the carried-over set.
+    filteredComponents = CS.filterKeys (\lbl -> Set.member lbl newLabels) existingComponents
 
-    -- Filter to only components that exist in new archetype
-    -- Use cached labels if archetype exists, otherwise compute from ID
-    newArchLabels = case Map.lookup newArchId world.archetypes of
-      Just arch -> arch.labels
-      Nothing -> Set.fromFoldable $ parseArchetypeId newArchId
-    filteredComponents = CS.filterKeys (\label ->
-      Set.member label newArchLabels
-    ) existingComponents
-
-    -- Remove from old archetype
     world1 = removeFromArchetype entityId oldArchId world
 
-    -- Add to new archetype with filtered components and new mask
-    world2 = addToArchetypeWithAllComponents entityId newArchId newMask filteredComponents world1
+    -- ArchetypeId == ComponentMask, so we pass newArchId as both key and mask.
+    world2 = addToArchetypeWithAllComponents entityId newArchId newArchId newLabels filteredComponents world1
 
-    -- Update entity location
     updatedLocations = Map.insert idx newArchId world2.entityLocations
   in
     { world: world2 { entityLocations = updatedLocations } }
 
 -- | Add entity to archetype with multiple components (used by removeComponent).
-addToArchetypeWithAllComponents :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> World -> World
-addToArchetypeWithAllComponents entityId archId newMask allComponents world =
+-- |
+-- | Both `newMask` and `newLabels` are precomputed by the caller, so this
+-- | helper does no string parsing.
+addToArchetypeWithAllComponents
+  :: EntityId
+  -> ArchetypeId
+  -> ComponentMask
+  -> Set String
+  -> ComponentStorage
+  -> World
+  -> World
+addToArchetypeWithAllComponents entityId archId newMask newLabels allComponents world =
   let
-    -- Check if this is a new archetype (for cache invalidation)
     isNewArchetype = not $ Map.member archId world.archetypes
 
-    -- Get or create archetype (compute labels from ID for new archetypes)
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
       Nothing ->
         { entities: []
         , entityPositions: Map.empty
         , mask: newMask
-        , labels: Set.fromFoldable $ parseArchetypeId archId
+        , labels: newLabels
         , storage: CS.empty
         }
 
@@ -626,34 +611,34 @@ extractAllComponentsForEntity idx storage =
       Nothing -> acc  -- Should never happen in correct usage
   ) CS.empty storage
 
--- Helper for array range
-range :: Int -> Int -> Array Int
-range start end =
-  if start > end then []
-  else start : range (start + 1) end
-
-infixl 8 range as ..
-
 -- | Add entity to archetype with components (both existing and new).
 -- |
--- | mask: Precomputed bitmask for the new archetype
+-- | newMask: Precomputed bitmask for the new archetype
+-- | newLabels: Precomputed label set for the new archetype
 -- | existingComponents: ComponentStorage of component values to preserve (from old archetype)
--- | label: new component label to add
--- | componentValue: new component value to add
-addToArchetypeWithComponent :: EntityId -> ArchetypeId -> ComponentMask -> ComponentStorage -> String -> Foreign -> World -> World
-addToArchetypeWithComponent entityId archId newMask existingComponents newLabel newComponentValue world =
+-- | newLabel: new component label to add
+-- | newComponentValue: new component value to add
+addToArchetypeWithComponent
+  :: EntityId
+  -> ArchetypeId
+  -> ComponentMask
+  -> Set String
+  -> ComponentStorage
+  -> String
+  -> Foreign
+  -> World
+  -> World
+addToArchetypeWithComponent entityId archId newMask newLabels existingComponents newLabel newComponentValue world =
   let
-    -- Check if this is a new archetype (for cache invalidation)
     isNewArchetype = not $ Map.member archId world.archetypes
 
-    -- Get or create archetype with component storage (compute labels from ID for new archetypes)
     arch = case Map.lookup archId world.archetypes of
       Just a -> a
       Nothing ->
         { entities: []
         , entityPositions: Map.empty
         , mask: newMask
-        , labels: Set.fromFoldable $ parseArchetypeId archId
+        , labels: newLabels
         , storage: CS.empty
         }
 
@@ -687,54 +672,3 @@ addToArchetypeWithComponent entityId archId newMask existingComponents newLabel 
     if isNewArchetype
       then incrementStructuralVersion world'
       else world'
-
--- | Parse archetype ID into component labels.
--- |
--- | "Position,Velocity" -> ["Position", "Velocity"]
--- | "" -> []
-parseArchetypeId :: ArchetypeId -> Array String
-parseArchetypeId "" = []
-parseArchetypeId archId =
-  map trim $ split (Pattern ",") archId
-
--- | Build archetype ID from component labels (sorted).
--- |
--- | ["Velocity", "Position"] -> "Position,Velocity"
--- | [] -> ""
-buildArchetypeId :: Array String -> ArchetypeId
-buildArchetypeId [] = ""
-buildArchetypeId labels =
-  joinWith "," (sort labels)
-
--- | Add label to archetype ID (maintains sorted order).
--- |
--- | "Velocity" + "Position" -> "Position,Velocity"
-addLabelToArchetype :: String -> ArchetypeId -> ArchetypeId
-addLabelToArchetype label archId =
-  let
-    labels = parseArchetypeId archId
-    newLabels = label : labels
-  in
-    buildArchetypeId newLabels
-
--- | Remove label from archetype ID.
--- |
--- | "Position,Velocity" - "Position" -> "Velocity"
-removeLabelFromArchetype :: String -> ArchetypeId -> ArchetypeId
-removeLabelFromArchetype label archId =
-  let
-    labels = parseArchetypeId archId
-    newLabels = filter (_ /= label) labels
-  in
-    buildArchetypeId newLabels
-
--- | Check if archetype contains a component label.
--- |
--- | "Position" in "Position,Velocity" -> true
--- | "Health" in "Position,Velocity" -> false
-archetypeContains :: String -> ArchetypeId -> Boolean
-archetypeContains label archId =
-  let labels = parseArchetypeId archId
-  in case findIndex (_ == label) labels of
-       Just _ -> true
-       Nothing -> false
