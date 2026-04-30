@@ -62,6 +62,8 @@ export const writeRef = ref => value => () => {
   ref.value = value;
 };
 
+export const performanceNow = () => performance.now();
+
 export const setControlCallbacks = pauseCallback => resetCallback => setSpeedCallback => () => {
   if (window.ecsControls) {
     window.ecsControls.pause = (isPaused) => pauseCallback(isPaused)();

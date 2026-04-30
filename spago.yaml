@@ -1,6 +1,10 @@
 workspace:
   packageSet:
     registry: 56.4.0
+  backend:
+    cmd: purs-backend-es
+    args:
+      - build
 
 package:
   name: pure-ecs

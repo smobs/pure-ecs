@@ -313,28 +313,35 @@ gameLoop = do
 
 ## Performance Characteristics
 
+A = archetypes, N = entities in matching archetypes, C = required components per query.
+
 | Operation | Time | Space | Notes |
 |-----------|------|-------|-------|
-| spawnEntity | O(1) amortized | O(1) | Free list for recycling |
-| addComponent | O(log A + log E + C) | O(C) | A=archetypes, E=entities, C=components |
-| removeComponent | O(log A + log E) | O(1) | Archetype migration with position map |
-| getComponent | O(log E) | O(1) | E=entities in archetype |
-| despawnEntity | O(log E) | O(1) | Swap-remove with position map |
-| query | O(A + N) | O(N) | O(1) bitmask filter + N result entities |
-| runSystem | O(system) | O(system) | Depends on system complexity |
+| spawnEntity | O(log A) | O(1) | Free list for recycling, archetype map insert |
+| addComponent | O(log A + N) | O(N) | Archetype migration: column copy on transfer |
+| removeComponent | O(log A + N) | O(N) | Archetype migration: column copy on transfer |
+| **setComponent (in-place value update)** | **O(log A + log N)** | **O(1)** | **Single column write — no migration, no version bump** |
+| getComponent | O(log A + log N) | O(1) | Map.lookup × 2 + Array.index |
+| despawnEntity | O(log A + log N) | O(1) | Swap-remove with position map |
+| query (cached) | O(N + C·N) | O(N) | One column read per (entity, component); archetype filter served from cache |
+| query (uncached) | O(A + N + C·N) | O(N) | First call also computes archetype filter from bitmasks |
+| runSystem | depends on body | depends | Composes via State monad |
 
-**v3.2.0 Improvements**:
-- Entity position map: O(log N) lookups instead of O(N) linear search
-- Swap-remove: O(1) array removal instead of O(N) filter
+**Hot-path principle:** `updateComponent`/`modifyComponent` (and their `_` variants) route through `setComponentPure` internally — value writes never trigger archetype migration. Only `addComponent`/`removeComponent` (which change the row type) pay migration cost. Inside a `for_ results …` loop, value updates are O(1) per call rather than O(N·C).
+
+**Architecture choices that deliver these bounds**:
+- Archetypes are keyed by `ComponentMask :: Int` — eliminates per-add/remove string parsing/sorting/joining
 - Bitmask archetype matching: O(1) per archetype instead of O(C) set operations
-- Cached archetype labels: O(log N) Set lookup instead of O(N) string parsing
-- Query caching: Repeated queries skip archetype matching entirely
+- Entity position map: O(log N) per-archetype row lookup
+- `setComponent` fast path: column-write without migration when the row type is invariant
+- Query cache keyed by `(reqMask, excMask)` tuple — no string allocation per cached lookup
+- Per-entity archetype/storage references are resolved once per archetype during query iteration, not once per (entity, component)
 
 **Optimization tips**:
+- Prefer `updateComponent_`/`modifyComponent_` over `removeComponent` + `addComponent` for value updates
 - Batch entity creation
 - Query once, iterate many times
-- Use archetype-aware algorithms
-- Profile before optimizing
+- Profile before optimizing — `bench/` has a harness using `Effect.Now`
 
 ## Migration Guide
 

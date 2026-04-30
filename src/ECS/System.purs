@@ -25,7 +25,7 @@ import Prelude (Unit, unit, ($))
 import Control.Monad.State (State, state, runState)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import ECS.Component (addComponentPure, removeComponentPure, getComponentPure)
+import ECS.Component (getComponentPure, setComponentPure)
 import ECS.Query (Query, QueryResult, class ExtractLabels, class ReadComponents)
 import ECS.Query (runQueryCached) as Q
 import ECS.Query as ECSQuery
@@ -130,15 +130,16 @@ queryFor = state \world ->
 
 -- | Update a component within a system.
 -- |
--- | This is implemented as remove-then-add to handle the type system properly.
+-- | Implemented via setComponentPure — a single column write at the entity's
+-- | row position. No archetype migration, no structural-version bump.
 -- | The component must exist (Cons proves it) and must be in the write set.
--- | Works cleanly with do-notation - no nested runSystem calls needed!
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
 -- | - Cons label a r' r: Proves component exists in entity
 -- | - Cons label a trash writes: Proves component is in write set
--- | - Lacks label r': After removal, component doesn't exist
+-- | - Lacks label r': API-preserving artefact from the previous remove-then-add
+-- |   implementation; harmless and satisfied automatically by valid callers
 -- |
 -- | Example:
 -- | ```purescript
@@ -156,11 +157,8 @@ updateComponent :: forall label a r r' writes trash.
   Entity r ->
   System r' writes (Entity r)
 updateComponent label newValue entity = state \world ->
-  let -- Remove component (entity type: r -> r')
-      {world: world1, entity: entity'} = removeComponentPure label entity world
-      -- Add component back with new value (entity type: r' -> r)
-      {world: world2, entity: entity''} = addComponentPure label newValue entity' world1
-  in Tuple entity'' world2
+  let { world: world' } = setComponentPure label newValue entity world
+  in Tuple entity world'
 
 -- | Fire-and-forget variant of updateComponent.
 -- |
@@ -194,22 +192,19 @@ updateComponent_ :: forall label a r r' writes trash.
   Entity r ->
   System r' writes Unit
 updateComponent_ label newValue entity = state \world ->
-  let -- Remove component (entity type: r -> r')
-      {world: world1, entity: entity'} = removeComponentPure label entity world
-      -- Add component back with new value (entity type: r' -> r)
-      {world: world2, entity: _} = addComponentPure label newValue entity' world1
-  in Tuple unit world2
+  let { world: world' } = setComponentPure label newValue entity world
+  in Tuple unit world'
 
 -- | Modify a component using a transformation function (read-modify-write).
 -- |
--- | This helper combines get + modify + update into a single operation,
--- | dramatically reducing verbosity for the common read-modify-write pattern.
+-- | Reads the existing value with getComponentPure, applies f, then writes
+-- | the result via setComponentPure (single column write — no migration).
 -- |
 -- | Type constraints:
 -- | - IsSymbol label: Label is a compile-time string
--- | - Cons label a r' r: Component exists in entity and can be removed
+-- | - Cons label a r' r: Component exists in entity
 -- | - Cons label a trash writes: Component is in write set
--- | - Lacks label r': After removal, component doesn't exist
+-- | - Lacks label r': API-preserving artefact; harmless
 -- |
 -- | Returns:
 -- | - Updated entity: If component exists
@@ -246,9 +241,8 @@ modifyComponent proxy f entity = state \world ->
   case getComponentPure proxy entity world of
     Nothing -> Tuple entity world
     Just value ->
-      let {world: w1, entity: e1} = removeComponentPure proxy entity world
-          {world: w2, entity: e2} = addComponentPure proxy (f value) e1 w1
-      in Tuple e2 w2
+      let { world: world' } = setComponentPure proxy (f value) entity world
+      in Tuple entity world'
 
 -- | Fire-and-forget variant of modifyComponent.
 -- |
@@ -280,6 +274,5 @@ modifyComponent_ proxy f entity = state \world ->
   case getComponentPure proxy entity world of
     Nothing -> Tuple unit world
     Just value ->
-      let {world: w1, entity: e1} = removeComponentPure proxy entity world
-          {world: w2, entity: _} = addComponentPure proxy (f value) e1 w1
-      in Tuple unit w2
+      let { world: world' } = setComponentPure proxy (f value) entity world
+      in Tuple unit world'

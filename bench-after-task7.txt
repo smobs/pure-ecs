@@ -1,0 +1,123 @@
+
+> pure-ecs@0.1.0 bench
+> spago bundle -p pure-ecs-bench --output output-es && node bench/bench-out.mjs
+
+Reading Spago workspace configuration...
+
+✓ Selecting package to build: pure-ecs-bench
+
+Downloading dependencies...
+Building...
+[1 of 6] Compiling ECS.Query
+[2 of 6] Compiling ECS.System
+[3 of 6] Compiling Bench.ECS.Bench
+[4 of 6] Compiling ECS.Examples.WebDemo
+[5 of 6] Compiling ECS.Examples.SimpleExample
+[6 of 6] Compiling Bench.Main
+[WARNING 1/8 UnusedExplicitImport] src/ECS/Examples/SimpleExample.purs:26:1
+
+  26  import Control.Monad.State (State, execState, state)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of module Control.Monad.State contains the following unused references:
+    state
+  It could be replaced with:
+    import Control.Monad.State (State, execState)
+
+[WARNING 2/8 UnusedExplicitImport] src/ECS/Examples/SimpleExample.purs:27:1
+
+  27  import Data.Array (filter, length, foldl)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of module Data.Array contains the following unused references:
+    foldl
+  It could be replaced with:
+    import Data.Array (filter, length)
+
+[WARNING 3/8 UnusedImport] src/ECS/Examples/SimpleExample.purs:29:1
+
+  29  import Data.Tuple (Tuple(..))
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of Data.Tuple is redundant
+
+[WARNING 4/8 UnusedImport] src/ECS/Examples/WebDemo.purs:12:1
+
+  12  import Data.Maybe (Maybe(..))
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of Data.Maybe is redundant
+
+[WARNING 5/8 UnusedImport] src/ECS/Examples/WebDemo.purs:15:1
+
+  15  import Data.Tuple (Tuple(..))
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of Data.Tuple is redundant
+
+[WARNING 6/8 UnusedName] src/ECS/Examples/WebDemo.purs:279:12
+
+  279    let loop timestamp = do
+                  ^^^^^^^^^
+
+  Name timestamp was introduced but not used.
+  in value declaration main
+
+[WARNING 7/8 UnusedExplicitImport] src/ECS/Query.purs:38:1
+
+  38  import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, CachedQueryResult, wrapEntity, maskContains, maskHasAny, makeQueryCacheKey)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of module ECS.World contains the following unused references:
+    CachedQueryResult
+  It could be replaced with:
+    import ECS.World (Archetype, ArchetypeId, ComponentMask, Entity, QueryCacheKey, World, makeQueryCacheKey, maskContains, maskHasAny, wrapEntity)
+
+[WARNING 8/8 UnusedExplicitImport] src/ECS/System.purs:24:1
+
+  24  import Prelude (Unit, unit, ($))
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  The import of module Prelude contains the following unused references:
+    ($)
+  It could be replaced with:
+    import Prelude (Unit, unit)
+
+           Src   Lib   All
+Warnings     8     0     8
+Errors       0     0     0
+
+✓ Build succeeded.
+
+Compiling with backend "purs-backend-es"
+purs-backend-es build
+    Unexpected argument:
+        --output
+
+    Builds ES code from corefn.json files
+
+    --corefn-dir                       Path to input directory containing corefn.json files.
+                                       Defaults to './output'.
+    --directives                       Path to file that defines external inline directives (optional).
+    --foreign-dir                      Path to directory for foreign module overrides (optional).
+    --help,-h                          Show this help message.
+    --int-tags                         Use integers for tags in codegen instead of strings.
+    --output-dir                       Path to output directory for backend files.
+                                       Defaults to './output-es'.
+    --timing                           Print timing data for modules.
+    --trace-rewrites QUALIFIED_NAME    Traces rewrite passes for a top-level definition during optimizations.
+                                       Outputs results to optimization-traces.txt.
+
+✓ Backend build succeeded.
+
+Bundling...
+
+  bench/bench-out.mjs  46.0kb
+
+⚡ Done in 12ms
+
+✓ Bundle succeeded.
+
+spawn 1000 entities (3 components each): 23 ms (avg of 5, sink=3)
+query+update (pos, vel) over 1000 entities: 4 ms (avg of 5, sink=3)
+10 movement ticks over 1000 entities: 27 ms (avg of 5, sink=3)

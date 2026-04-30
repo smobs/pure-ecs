@@ -1,0 +1,19 @@
+package:
+  name: pure-ecs-bench
+  dependencies:
+    - arrays
+    - console
+    - datetime
+    - effect
+    - foldable-traversable
+    - integers
+    - now
+    - prelude
+    - refs
+    - transformers
+    - typelevel-prelude
+    - pure-ecs
+  bundle:
+    module: Bench.Main
+    outfile: bench-out.mjs
+    platform: node

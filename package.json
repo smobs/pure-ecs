@@ -9,10 +9,11 @@
   },
   "scripts": {
     "build": "spago build",
-    "test": "spago test",
+    "test": "spago build && node --input-type=module -e \"import('./output-es/Test.Main/index.js').then(m => m.main());\"",
     "docs": "spago docs",
-    "clean": "rm -rf output .spago",
+    "clean": "rm -rf output output-es .spago",
     "build:demo": "spago build && node build-demo.js",
+    "bench": "spago bundle -p pure-ecs-bench --output output-es && node bench/bench-out.mjs",
     "serve": "python3 -m http.server 8000 --directory docs"
   },
   "keywords": [
@@ -25,6 +26,7 @@
   "devDependencies": {
     "esbuild": "^0.19.0",
     "purescript": "^0.15.15",
+    "purs-backend-es": "^1.4.3",
     "spago": "next"
   }
 }

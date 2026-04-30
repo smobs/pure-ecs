@@ -18,7 +18,7 @@ See the ECS in action with an interactive visual demonstration!
 - **Monadic API**: Clean State monad API eliminates manual world threading - no more `{world: w1, entity: e1}` patterns!
 - **High Performance**: Archetype-based storage groups entities by component signature for cache-friendly iteration
 - **Generational Indices**: Prevents use-after-free bugs through entity versioning
-- **Production Ready**: Comprehensive test coverage (110+ tests)
+- **Production Ready**: Comprehensive test coverage (145+ tests)
 
 ## Installation
 

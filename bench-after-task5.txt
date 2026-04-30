@@ -1,0 +1,14 @@
+Benchmarks after Task 5 (route updateComponent/modifyComponent through setComponentPure).
+Backend: purs-backend-es 1.4.3 (optimising). Hardware: linux x64. Timer: Effect.Now (ms).
+Iterations: 5 per scenario, simple arithmetic mean. Warm-up run discarded.
+
+spawn 1000 entities (3 components each): 22 ms (avg of 5, sink=3)
+query+update (pos, vel) over 1000 entities: 4 ms (avg of 5, sink=3)
+10 movement ticks over 1000 entities: 34 ms (avg of 5, sink=3)
+
+Notes:
+  * `sink` is `world.structuralVersion` written into a Ref so the optimiser
+    cannot dead-code-eliminate the scenario work.
+  * Scenarios live in bench/src/. Run with `npm run bench`.
+  * Numbers are noisy at this magnitude; expect +/-10% run to run. Trust ratios,
+    not absolutes.

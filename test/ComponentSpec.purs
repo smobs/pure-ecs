@@ -3,9 +3,10 @@ module Test.ECS.ComponentSpec where
 import Prelude
 
 import Control.Monad.State (State, execState, runState)
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested ((/\))
-import ECS.Component (addComponentPure, getComponentPure, hasComponent, removeComponentPure)
+import ECS.Component (addComponentPure, getComponentPure, hasComponent, removeComponentPure, setComponentPure)
 import ECS.Entity (entityIndex)
 import ECS.World (World, emptyWorld, hasEntity, spawnEntityPure, unEntity)
 import Test.Spec (Spec, describe, it)
@@ -243,6 +244,21 @@ componentSpec = do
         let world = emptyWorld
             results = addMultiple 10 world
         results.count `shouldEqual` 10
+
+    describe "setComponentPure" do
+      it "writes a new value without archetype migration" do
+        let world = emptyWorld
+            { world: w0, entity: e0 } = spawnEntityPure world
+            { world: w1, entity: e1 } = addComponentPure (Proxy :: _ "position") {x: 1.0, y: 2.0} e0 w0
+            archIdBefore = Map.lookup (entityIndex (unEntity e1)) w1.entityLocations
+            structVerBefore = w1.structuralVersion
+            { world: w2, entity: _ } = setComponentPure (Proxy :: _ "position") {x: 99.0, y: 99.0} e1 w1
+            archIdAfter = Map.lookup (entityIndex (unEntity e1)) w2.entityLocations
+            structVerAfter = w2.structuralVersion
+            newVal = getComponentPure (Proxy :: _ "position") e1 w2
+        archIdBefore `shouldEqual` archIdAfter
+        structVerBefore `shouldEqual` structVerAfter
+        newVal `shouldEqual` Just {x: 99.0, y: 99.0}
 
 -- Helper to create multiple entities
 addMultiple :: Int -> World -> { count :: Int, world :: World }

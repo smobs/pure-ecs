@@ -71,16 +71,19 @@ type ComponentRegistry =
   , nextBit :: Int
   }
 
--- | Archetype ID derived from sorted component type names.
+-- | Archetype ID is the bitmask of component bits.
 -- |
--- | Example: "Position,Velocity" or "Health,Position,Velocity"
--- | Components are sorted alphabetically for consistency.
-type ArchetypeId = String
+-- | Two archetypes are the same iff they have the same set of components,
+-- | which the bitmask captures exactly. Keys in `world.archetypes` are masks.
+-- | This eliminates per-add/remove string parsing/sorting/joining.
+type ArchetypeId = ComponentMask
 
 -- | Key for query cache lookup.
 -- |
--- | Uniquely identifies a query by its required and excluded component masks.
-type QueryCacheKey = String  -- Format: "req:N,exc:M" where N,M are masks
+-- | (requiredMask, excludedMask) — uniquely identifies a query by its
+-- | required/excluded component masks. Tuple keys avoid the per-call
+-- | string allocation of a formatted key.
+type QueryCacheKey = Tuple ComponentMask ComponentMask
 
 -- | Cached query result with version tracking.
 -- |
@@ -142,9 +145,9 @@ type Archetype =
   , storage :: ComponentStorage
   }
 
--- | Empty archetype ID for newly spawned entities.
+-- | Empty archetype ID for newly spawned entities (mask = 0, no components).
 emptyArchetypeId :: ArchetypeId
-emptyArchetypeId = ""
+emptyArchetypeId = 0
 
 -- | Create an empty world.
 -- |
@@ -428,10 +431,9 @@ maskRemoveBit mask bit =
 
 -- | Create a cache key from required and excluded masks.
 -- |
--- | Format: "req:N,exc:M" where N,M are the mask values.
+-- | Tuple keys avoid string allocation on every cache lookup.
 makeQueryCacheKey :: ComponentMask -> ComponentMask -> QueryCacheKey
-makeQueryCacheKey requiredMask excludedMask =
-  "req:" <> show requiredMask <> ",exc:" <> show excludedMask
+makeQueryCacheKey requiredMask excludedMask = Tuple requiredMask excludedMask
 
 -- | Increment the structural version (invalidates query cache).
 -- |

@@ -27,6 +27,7 @@ module ECS.Query
 import Prelude
 
 import Data.Array (foldl)
+import Data.Array as Array
 import Data.Foldable (foldl) as F
 import Data.Int.Bits (shl)
 import Data.Map as Map
@@ -34,7 +35,6 @@ import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple.Nested (type (/\), (/\))
-import ECS.Entity (EntityId, entityIndex)
 import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, CachedQueryResult, wrapEntity, maskContains, maskHasAny, makeQueryCacheKey)
 import ECS.Internal.ComponentStorage as CS
 import Prim.Row (class Cons, class Lacks)
@@ -135,51 +135,17 @@ runQuery (Query q) world =
       Nothing -> []  -- Required component not registered, no matches possible
       Just requiredMask ->
         let
-          -- Get all archetypes from world
-          archetypes = Map.toUnfoldable world.archetypes :: Array _
-
-          -- Filter to matching archetypes using O(1) bitmask operations
-          matchingArchs = foldl (\acc (_ /\ arch) ->
-            if archetypeMatchesMask arch.mask requiredMask excludedMask
-              then acc <> [arch]
-              else acc
-          ) [] archetypes
-
-          -- Extract results from each matching archetype
-          results = foldl (\acc arch ->
-            let archResults = extractFromArchetype arch world
-            in acc <> archResults
-          ) [] matchingArchs
-        in results
-  where
-    -- Extract query results from a single archetype
-    extractFromArchetype :: Archetype -> World -> Array (QueryResult required)
-    extractFromArchetype arch world' =
-      let
-        -- Find archetype ID for reading (needed by readComponents)
-        archId = findArchetypeId arch world'
-
-        -- Build result for each entity in archetype
-        entityResults = map (\entityId ->
-          let
-            -- Read components for this entity
-            components = readComponents (Proxy :: Proxy rl) archId entityId world'
-          in
-            { entity: wrapEntity entityId
-            , components
-            }
-        ) arch.entities
-      in entityResults
-
-    -- Find archetype ID from archetype (reverse lookup)
-    findArchetypeId :: Archetype -> World -> ArchetypeId
-    findArchetypeId arch w =
-      let
-        archs = Map.toUnfoldable w.archetypes :: Array _
-        found = foldl (\acc (id /\ a) ->
-          if a.mask == arch.mask then id else acc
-        ) "" archs
-      in found
+          -- Filter archetypes whose mask matches required/excluded constraints.
+          -- Thread the (archId, arch) pair through to avoid an O(A) reverse
+          -- lookup per match (was O(A^2) total).
+          matches :: Array (ArchetypeId /\ Archetype)
+          matches = Array.filter
+            (\(_ /\ arch) -> archetypeMatchesMask arch.mask requiredMask excludedMask)
+            (Map.toUnfoldable world.archetypes)
+        in
+          Array.concatMap
+            (\(_ /\ arch) -> extractEntities (Proxy :: Proxy rl) arch)
+            matches
 
 -- | Convert a set of labels to a bitmask using the world's registry.
 -- | Returns Nothing if any label is not registered (meaning no matches possible).
@@ -253,14 +219,14 @@ runQueryCached (Query q) world =
               -- Cache hit! Use cached archetype IDs
               { matchingArchIds: archIds, world': world }
             Nothing ->
-              -- Cache miss - compute and cache
+              -- Cache miss - compute and cache (single-pass mapMaybe)
               let
-                archetypes = Map.toUnfoldable world.archetypes :: Array _
-                archIds = foldl (\acc (archId /\ arch) ->
-                  if archetypeMatchesMask arch.mask requiredMask excludedMask
-                    then acc <> [archId]
-                    else acc
-                ) [] archetypes
+                archIds = Array.mapMaybe
+                  (\(archId /\ arch) ->
+                      if archetypeMatchesMask arch.mask requiredMask excludedMask
+                        then Just archId
+                        else Nothing)
+                  (Map.toUnfoldable world.archetypes)
                 -- Update cache
                 newCacheEntry = { matchingArchetypes: archIds, version: world.structuralVersion }
                 updatedCache = Map.insert cacheKey newCacheEntry world.queryCache
@@ -269,14 +235,12 @@ runQueryCached (Query q) world =
                 , world': world { queryCache = updatedCache }
                 }
 
-          -- Extract results from matching archetypes
-          results = foldl (\acc archId ->
-            case Map.lookup archId worldAfterCache.archetypes of
-              Nothing -> acc  -- Archetype doesn't exist (shouldn't happen with valid cache)
-              Just arch ->
-                let archResults = extractFromArchetypeCached archId arch worldAfterCache
-                in acc <> archResults
-          ) [] matchingArchIds
+          -- Extract results from matching archetypes (single-pass concatMap)
+          results = Array.concatMap
+            (\archId -> case Map.lookup archId worldAfterCache.archetypes of
+                Nothing   -> []
+                Just arch -> extractEntities (Proxy :: Proxy rl) arch)
+            matchingArchIds
         in
           { results, world: worldAfterCache }
   where
@@ -289,14 +253,6 @@ runQueryCached (Query q) world =
           if cached.version == w.structuralVersion
             then Just cached.matchingArchetypes
             else Nothing  -- Stale cache entry
-
-    -- Extract query results from a single archetype (using archetype ID directly)
-    extractFromArchetypeCached :: ArchetypeId -> Archetype -> World -> Array (QueryResult required)
-    extractFromArchetypeCached archId arch world' =
-      map (\entityId ->
-        let components = readComponents (Proxy :: Proxy rl) archId entityId world'
-        in { entity: wrapEntity entityId, components }
-      ) arch.entities
 
 -- | Apply a callback to each query result, collecting the return values.
 -- |
@@ -360,15 +316,17 @@ instance extractLabelsCons ::
       restLabels = extractLabels (Proxy :: Proxy tail)
     in Set.insert labelStr restLabels
 
--- | Read components from archetype storage into a typed record.
+-- | Read components from a resolved archetype + row index into a typed record.
 -- |
--- | This type class walks the RowList, reading each component from the
--- | archetype's storage and building up a record with proper field names.
+-- | The caller must have already resolved the archetype and the entity's row
+-- | position. The class then walks the RowList and indexes each component
+-- | column at that fixed row, allocating only the result record. This avoids
+-- | the per-(entity, component) Map traversals that the previous design paid.
 class ReadComponents (rl :: RowList Type) (r :: Row Type) | rl -> r where
-  readComponents :: Proxy rl -> ArchetypeId -> EntityId -> World -> Record r
+  readComponents :: Proxy rl -> Archetype -> Int -> Record r
 
 instance readComponentsNil :: ReadComponents RL.Nil () where
-  readComponents _ _ _ _ = {}
+  readComponents _ _ _ = {}
 
 instance readComponentsCons ::
   ( IsSymbol label
@@ -377,59 +335,39 @@ instance readComponentsCons ::
   , ReadComponents tail r'
   ) =>
   ReadComponents (RL.Cons label typ tail) r where
-  readComponents _ archId entityId world =
+  readComponents _ arch rowIdx =
     let
-      -- Read the current component
-      labelStr = reflectSymbol (Proxy :: Proxy label)
-      componentValue = readComponentValue labelStr archId entityId world
+      labelStr       = reflectSymbol (Proxy :: Proxy label)
+      componentValue = readColumnAt labelStr arch rowIdx
+      rest           = readComponents (Proxy :: Proxy tail) arch rowIdx
+    in
+      Record.insert (Proxy :: Proxy label) componentValue rest
 
-      -- Read the rest of the components
-      rest = readComponents (Proxy :: Proxy tail) archId entityId world
-
-      -- Insert this component into the record
-      result = Record.insert (Proxy :: Proxy label) componentValue rest
-    in result
-
--- | Read a single component value from archetype storage.
+-- | Read one component value from a resolved archetype at a known row index.
 -- |
--- | Algorithm:
--- | 1. Find archetype in world
--- | 2. Find entity's index in archetype using O(log N) position map
--- | 3. Get component array for the label
--- | 4. Index into array at entity's position
--- | 5. Unsafely coerce from Foreign to component type
+-- | This is the lowest-level read in the hot path. It does one CS.lookup
+-- | (Foreign-Object hash lookup) and one Array.index. No Map traversals.
+readColumnAt :: forall a. String -> Archetype -> Int -> a
+readColumnAt label arch rowIdx =
+  case CS.lookup label arch.storage of
+    Nothing  -> CS.componentFromForeign (CS.componentToForeign unit)
+    Just col -> case CS.arrayIndex rowIdx col of
+      Nothing -> CS.componentFromForeign (CS.componentToForeign unit)
+      Just fv -> CS.componentFromForeign fv
+
+-- | Build query results from a resolved archetype.
 -- |
--- | Safety: Type erasure is controlled - we only insert typed values
--- | and retrieve them with the same types via row polymorphism.
-readComponentValue :: forall a. String -> ArchetypeId -> EntityId -> World -> a
-readComponentValue label archId entityId world =
-  case Map.lookup archId world.archetypes of
-    Nothing ->
-      -- Archetype doesn't exist (shouldn't happen in valid query)
-      CS.componentFromForeign (CS.componentToForeign unit)
-
-    Just arch ->
-      let
-        -- Find entity's index in archetype using O(log N) position map
-        entityIdx = Map.lookup (entityIndex entityId) arch.entityPositions
-      in
-        case entityIdx of
-          Nothing ->
-            -- Entity not in archetype (shouldn't happen)
-            CS.componentFromForeign (CS.componentToForeign unit)
-
-          Just idx ->
-            case CS.lookup label arch.storage of
-              Nothing ->
-                -- Component doesn't exist (shouldn't happen if archetype matches)
-                CS.componentFromForeign (CS.componentToForeign unit)
-
-              Just componentArray ->
-                case CS.arrayIndex idx componentArray of
-                  Nothing ->
-                    -- Index out of bounds (shouldn't happen)
-                    CS.componentFromForeign (CS.componentToForeign unit)
-
-                  Just foreignValue ->
-                    -- Cast from Foreign to component type
-                    CS.componentFromForeign foreignValue
+-- | Walks the archetype's entity column once with `mapWithIndex`, resolving
+-- | the row index per entity exactly once. The typeclass walk then indexes
+-- | each component column at that fixed row, with no Map traversals.
+extractEntities
+  :: forall required rl
+   . ReadComponents rl required
+  => Proxy rl -> Archetype -> Array (QueryResult required)
+extractEntities rl arch =
+  Array.mapWithIndex
+    (\rowIdx entityId ->
+        { entity: wrapEntity entityId
+        , components: readComponents rl arch rowIdx
+        })
+    arch.entities
