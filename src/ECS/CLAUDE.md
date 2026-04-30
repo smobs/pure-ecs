@@ -321,14 +321,11 @@ See `src/ECS/Examples/SimpleExample.purs` for a complete working example with:
 
 ## Testing
 
-**110 tests covering**:
-- Entity lifecycle (27 tests)
-- World operations (22 tests)
-- Component management (18 tests)
-- Query system (27 tests)
-- System execution (16 tests)
+**145 tests covering** entity lifecycle, world operations, component management (including the `setComponentPure` in-place write path), query system, and system execution including `update`/`modify` helpers.
 
-Run: `spago test`
+Run: `npm test`
+
+(Note: `spago test` is broken when `purs-backend-es` is configured — the `npm test` script bundles the test main and invokes node directly.)
 
 ## Dependencies
 
