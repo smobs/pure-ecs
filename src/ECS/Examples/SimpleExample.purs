@@ -23,15 +23,18 @@ module ECS.Examples.SimpleExample where
 
 import Prelude
 
-import Control.Monad.State (State, execState, state)
-import Data.Array (filter, length, foldl)
+import Control.Monad.State (State, execState)
+import Data.Array (filter, length)
 import Data.Traversable (for_)
-import Data.Tuple (Tuple(..))
 import ECS.Component ((<+>), (:=))
-import ECS.System (System, runSystem, queryFor, modifyComponent_) 
+import ECS.Docs (documentPipeline)
+import ECS.Pipeline (Pipeline, PCons, PNil, named, pipeline, runPipeline, (>->))
+import ECS.System (System, queryFor, modifyComponent_)
 import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
 import Effect (Effect)
 import Effect.Console (log)
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync (writeTextFile)
 import Type.Proxy (Proxy(..))
 
 -- ============================================================================
@@ -65,8 +68,8 @@ type Damage = { amount :: Int }
 -- |
 -- | **Updated to use modifyComponent_**: This demonstrates the cleaner
 -- | read-modify-write pattern with the new helper function.
-physicsSystem :: forall w r. Number -> System (position :: Position, velocity :: Velocity | r)
-                                   (position :: Position | w)
+physicsSystem :: Number -> System (position :: Position, velocity :: Velocity)
+                                   (position :: Position)
                                    Int
 physicsSystem dt = do
   -- Query for all moving entities
@@ -93,8 +96,8 @@ physicsSystem dt = do
 -- |
 -- | **Updated to use modifyComponent_**: Demonstrates clean read-modify-write
 -- | pattern for applying damage to health components.
-damageSystem :: forall w r. System (health :: Health, damage :: Damage | r)
-                       (health :: Health | w)
+damageSystem :: System (health :: Health, damage :: Damage)
+                       (health :: Health)
                        Int
 damageSystem = do
   -- Query for all entities that can take damage
@@ -122,7 +125,7 @@ damageSystem = do
 -- | checks if they're dead (health <= 0), and despawns them.
 -- |
 -- | **Updated to use queryFor**: Shows the cleaner query API.
-cleanupSystem :: forall w r. System (health :: Health | r) w Int
+cleanupSystem :: System (health :: Health) () Int
 cleanupSystem = do
   -- Query all entities with health
   results <- queryFor @(health :: Health)
@@ -172,22 +175,29 @@ setupWorld = execState setupEntities emptyWorld
 -- Game Loop
 -- ============================================================================
 
--- | Run one tick of the game loop
+-- | The game pipeline.
 -- |
--- | Executes systems in sequence:
--- | 1. Physics - move entities
--- | 2. Damage - apply damage
--- | 3. Cleanup - remove dead entities
-gameTick :: Number -> World -> { world :: World, moved :: Int, killed :: Int, cleaned :: Int }
-gameTick dt world =
-  let -- Run physics system
-      {world: world1, result} = runSystem (do 
-       moved <- physicsSystem dt
-       killed <- damageSystem
-       cleaned <- cleanupSystem 
-       pure {moved, killed, cleaned}) world
+-- | Same value used by `runPipeline` (in `gameTick`) and by `documentPipeline`
+-- | (in `runExample`). Cannot drift.
+gamePipeline
+  :: Number
+  -> Pipeline "gameTick"
+       (PCons "physics" (position :: Position, velocity :: Velocity) (position :: Position)
+         (PCons "damage" (health :: Health, damage :: Damage) (health :: Health)
+           (PCons "cleanup" (health :: Health) ()
+             PNil)))
+       Int
+gamePipeline dt =
+       pipeline @"gameTick" (named @"physics" (physicsSystem dt))
+  >-> named @"damage" damageSystem
+  >-> named @"cleanup" cleanupSystem
 
-  in { world: world1, moved: result.moved, killed: result.killed, cleaned: result.cleaned }
+-- | Run one tick of the game loop. The result is the count of entities
+-- | despawned this tick (the cleanupSystem's return value).
+gameTick :: Number -> World -> { world :: World, cleaned :: Int }
+gameTick dt world =
+  let { world: world', result } = runPipeline (gamePipeline dt) world
+  in { world: world', cleaned: result }
 
 -- | Run the simulation for N ticks
 runSimulation :: Int -> Number -> World -> Effect World
@@ -195,10 +205,8 @@ runSimulation 0 _ world = pure world
 runSimulation n dt world = do
   log $ "=== Tick " <> show (6 - n) <> " ==="
 
-  let {world: world', moved, killed, cleaned} = gameTick dt world
+  let {world: world', cleaned} = gameTick dt world
 
-  log $ "  Moved: " <> show moved <> " entities"
-  log $ "  Killed: " <> show killed <> " entities"
   log $ "  Cleaned: " <> show cleaned <> " entities"
 
   runSimulation (n - 1) dt world'
@@ -249,6 +257,12 @@ runExample = do
   log "  ✓ System access tracking"
   log "  ✓ Entity lifecycle management"
   log "  ✓ Pure functional ECS architecture"
+  log ""
+
+  log "Generating pipeline documentation..."
+  let markdown = documentPipeline (gamePipeline 0.0)
+  writeTextFile UTF8 "docs/example-pipeline.md" markdown
+  log "Wrote docs/example-pipeline.md"
   log ""
 
   pure unit

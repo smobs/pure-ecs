@@ -17,6 +17,7 @@ package:
     - foreign-object
     - lists
     - maybe
+    - node-fs
     - ordered-collections
     - prelude
     - record
