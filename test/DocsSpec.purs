@@ -2,7 +2,8 @@ module Test.ECS.DocsSpec (docsSpec) where
 
 import Prelude
 
-import ECS.Docs (collectSteps)
+import Data.String (joinWith)
+import ECS.Docs (collectSteps, renderMarkdown)
 import ECS.Pipeline (PCons, PNil)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -40,3 +41,48 @@ docsSpec = describe "ECS.Docs" do
         , ["health"]
         , []
         ]
+
+  describe "renderMarkdown" do
+    it "produces the expected markdown for a 3-step fixture" do
+      let fixture =
+            [ { name: "physics", reads: ["position", "velocity"], writes: ["position"] }
+            , { name: "damage",  reads: ["damage", "health"],     writes: ["health"] }
+            , { name: "cleanup", reads: ["health"],               writes: [] }
+            ]
+          expected = joinWith "\n"
+            [ "# Pipeline: gameTick"
+            , ""
+            , "## Execution order"
+            , "1. physics"
+            , "2. damage"
+            , "3. cleanup"
+            , ""
+            , "## Data flow"
+            , "```mermaid"
+            , "flowchart LR"
+            , "    damage -->|health| cleanup"
+            , "```"
+            , ""
+            , "## Systems"
+            , "### physics"
+            , "- **Reads:** `position`, `velocity`"
+            , "- **Writes:** `position`"
+            , ""
+            , "### damage"
+            , "- **Reads:** `damage`, `health`"
+            , "- **Writes:** `health`"
+            , ""
+            , "### cleanup"
+            , "- **Reads:** `health`"
+            , "- **Writes:** *(none)*"
+            , ""
+            , "## Components touched"
+            , "| Component | Read by | Written by |"
+            , "|-----------|---------|------------|"
+            , "| damage | damage | — |"
+            , "| health | damage, cleanup | damage |"
+            , "| position | physics | physics |"
+            , "| velocity | physics | — |"
+            , ""
+            ]
+      renderMarkdown "gameTick" fixture `shouldEqual` expected
