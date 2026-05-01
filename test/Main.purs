@@ -7,6 +7,7 @@ import Effect.Aff (launchAff_)
 import Test.ECS.ComponentSpec (componentSpec)
 import Test.ECS.EntitySpec (entitySpec)
 import Test.ECS.IntegrationSpec (integrationSpec)
+import Test.ECS.PipelineSpec (pipelineSpec)
 import Test.ECS.QuerySpec (querySpec)
 import Test.ECS.SystemSpec (systemSpec)
 import Test.ECS.WorldSpec (worldSpec)
@@ -22,3 +23,4 @@ main = launchAff_ $ runSpec [consoleReporter] do
   querySpec
   systemSpec
   integrationSpec
+  pipelineSpec
