@@ -124,6 +124,32 @@ combinedSystem = do
 
 **Union constraint fix**: Use `Union required extra reads` instead of `Union required reads reads` for better type inference with closed rows.
 
+### Phase 6: Pipeline & Docs (`ECS.Pipeline`, `ECS.Docs`)
+- Compose **named** systems into a `Pipeline` value.
+- `runPipeline` executes; `documentPipeline` emits markdown — same value, can't drift.
+- Markdown includes execution order, mermaid data-flow graph, per-system reads/writes, and a components-touched table.
+- Zero runtime cost: doc generation only happens when called.
+
+**Key functions**: `named`, `pipeline`, `>->`, `runPipeline`, `documentPipeline`
+
+```purescript
+import ECS.Pipeline (named, pipeline, runPipeline, (>->))
+import ECS.Docs (documentPipeline)
+
+gamePipeline dt =
+       pipeline @"gameTick" (named @"physics" (physicsSystem dt))
+  >-> named @"damage" damageSystem
+  >-> named @"cleanup" cleanupSystem
+
+-- Run it:
+let { world: world' } = runPipeline (gamePipeline 0.016) world
+
+-- Document it (same value!):
+let markdown = documentPipeline (gamePipeline 0.0)
+```
+
+See `docs/example-pipeline.md` for a real generated doc.
+
 ## Design Philosophy
 
 ### 1. Pure Functional Core
@@ -480,9 +506,32 @@ main = do
 
 ---
 
-**Last Updated**: 2025-12-19 (Performance Optimizations)
-**Version**: 3.2.0
+**Last Updated**: 2026-05-01 (Pipeline & Docs)
+**Version**: 3.3.0
 **Status**: Production Ready ✅
+
+## Migration from 3.2 to 3.3
+
+**New Feature**: Pipeline composition with built-in documentation generation.
+
+This is an **additive** release — existing code requires no changes. The new `ECS.Pipeline` module lets you compose named systems into a `Pipeline` value; the new `ECS.Docs` module turns that same value into markdown documentation. Because the runtime artifact and the doc source are the same value, generated docs cannot drift from the actual game pipeline.
+
+### Adopting (optional)
+
+Wrap each system you want to compose with `named`:
+
+```purescript
+gamePipeline dt =
+       pipeline @"gameTick" (named @"physics" (physicsSystem dt))
+  >-> named @"damage" damageSystem
+  >-> named @"cleanup" cleanupSystem
+
+-- Same value runs the game AND generates the docs:
+runPipeline      (gamePipeline 0.016) world
+documentPipeline (gamePipeline 0.0)        -- returns String of markdown
+```
+
+Bare `System reads writes a` values still work everywhere they did before; only systems composed *into* a `Pipeline` need to be named.
 
 ## Migration from 3.1 to 3.2
 

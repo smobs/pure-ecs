@@ -18,7 +18,17 @@ See the ECS in action with an interactive visual demonstration!
 - **Monadic API**: Clean State monad API eliminates manual world threading - no more `{world: w1, entity: e1}` patterns!
 - **High Performance**: Archetype-based storage groups entities by component signature for cache-friendly iteration
 - **Generational Indices**: Prevents use-after-free bugs through entity versioning
-- **Production Ready**: Comprehensive test coverage (145+ tests)
+- **Self-Documenting**: Compose systems into a `Pipeline` and generate markdown docs (with mermaid data-flow diagrams) from the same value used to run the game — drift is impossible
+- **Production Ready**: Comprehensive test coverage (150+ tests)
+
+### Self-documenting games
+
+Compose your systems into a `Pipeline` and pure-ecs will generate markdown
+docs of your game's structure — execution order, system reads/writes, and
+inter-system data flow as a mermaid diagram. The pipeline value used to
+**run** your game is the same value used to **document** it; the two
+cannot drift. See [`docs/example-pipeline.md`](docs/example-pipeline.md)
+for a real generated doc.
 
 ## Installation
 
