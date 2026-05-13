@@ -124,17 +124,22 @@ combinedSystem = do
 
 **Union constraint fix**: Use `Union required extra reads` instead of `Union required reads reads` for better type inference with closed rows.
 
-### Phase 6: Pipeline & Docs (`ECS.Pipeline`, `ECS.Docs`)
+### Phase 6: Pipeline & Docs (`ECS.Pipeline`, `ECS.Docs`, `ECS.Docs.Write`)
 - Compose **named** systems into a `Pipeline` value.
 - `runPipeline` executes; `documentPipeline` emits markdown — same value, can't drift.
 - Markdown includes execution order, mermaid data-flow graph, per-system reads/writes, and a components-touched table.
 - Zero runtime cost: doc generation only happens when called.
+- `ECS.Docs.Write.writePipelineDocs` is the I/O companion: it writes the
+  markdown to a file *and* upserts a per-pipeline marker block into
+  `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` (any that exist in cwd) so an
+  agent reading those files learns the docs exist and where to find them.
 
-**Key functions**: `named`, `pipeline`, `>->`, `runPipeline`, `documentPipeline`
+**Key functions**: `named`, `pipeline`, `>->`, `runPipeline`, `documentPipeline`, `writePipelineDocs`
 
 ```purescript
 import ECS.Pipeline (named, pipeline, runPipeline, (>->))
-import ECS.Docs (documentPipeline)
+import ECS.Docs (documentPipeline)            -- pure: returns markdown String
+import ECS.Docs.Write (writePipelineDocs)     -- Effect: writes file + syncs agent files
 
 gamePipeline dt =
        pipeline @"gameTick" (named @"physics" (physicsSystem dt))
@@ -144,9 +149,33 @@ gamePipeline dt =
 -- Run it:
 let { world: world' } = runPipeline (gamePipeline 0.016) world
 
--- Document it (same value!):
+-- Document it (same value!) — pure:
 let markdown = documentPipeline (gamePipeline 0.0)
+
+-- Or document and persist in one step — also writes a marker block into
+-- any AGENTS.md / CLAUDE.md / GEMINI.md present in cwd:
+writePipelineDocs "docs/example-pipeline.md" (gamePipeline 0.0)
 ```
+
+The marker block looks like:
+
+```markdown
+<!-- pure-ecs:<pname>:begin -->
+
+### ECS pipeline: `<pname>`
+
+Auto-generated docs: [docs/<pname>.md](docs/<pname>.md)
+
+**Execution order:** stepA → stepB → stepC
+
+Managed by `ECS.Docs.Write`; do not hand-edit.
+<!-- pure-ecs:<pname>:end -->
+```
+
+Marker names are parameterised by the pipeline's `pname`, so multi-pipeline
+projects coexist in a single agent file without overwriting each other.
+Re-running `writePipelineDocs` with unchanged inputs is a byte-for-byte
+no-op (it skips the write if contents are unchanged).
 
 See `docs/example-pipeline.md` for a real generated doc.
 
@@ -506,7 +535,7 @@ main = do
 
 ---
 
-**Last Updated**: 2026-05-01 (Pipeline & Docs)
+**Last Updated**: 2026-05-13 (Pipeline & Docs + AGENTS.md sync)
 **Version**: 3.3.0
 **Status**: Production Ready ✅
 
@@ -719,3 +748,14 @@ composed = do
 3. Replace `composeSystem sys1 sys2` with `do { sys1; sys2 }`
 4. Import `queryFor` from `ECS.System`
 5. For inline systems, use: `import Control.Monad.State as CMS` and `CMS.state \w -> Tuple result w'`
+
+<!-- pure-ecs:gameTick:begin -->
+
+### ECS pipeline: `gameTick`
+
+Auto-generated docs: [docs/example-pipeline.md](docs/example-pipeline.md)
+
+**Execution order:** physics → damage → cleanup
+
+Managed by `ECS.Docs.Write`; do not hand-edit.
+<!-- pure-ecs:gameTick:end -->

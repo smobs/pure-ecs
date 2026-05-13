@@ -27,14 +27,12 @@ import Control.Monad.State (State, execState)
 import Data.Array (filter, length)
 import Data.Traversable (for_)
 import ECS.Component ((<+>), (:=))
-import ECS.Docs (documentPipeline)
+import ECS.Docs.Write (writePipelineDocs)
 import ECS.Pipeline (Pipeline, PCons, PNil, named, pipeline, runPipeline, (>->))
 import ECS.System (System, queryFor, modifyComponent_)
 import ECS.World (World, emptyWorld, spawnEntity, despawnEntity)
 import Effect (Effect)
 import Effect.Console (log)
-import Node.Encoding (Encoding(..))
-import Node.FS.Sync (writeTextFile)
 import Type.Proxy (Proxy(..))
 
 -- ============================================================================
@@ -260,9 +258,8 @@ runExample = do
   log ""
 
   log "Generating pipeline documentation..."
-  let markdown = documentPipeline (gamePipeline 0.0)
-  writeTextFile UTF8 "docs/example-pipeline.md" markdown
-  log "Wrote docs/example-pipeline.md"
+  writePipelineDocs "docs/example-pipeline.md" (gamePipeline 0.0)
+  log "Wrote docs/example-pipeline.md (and synced AGENTS.md / CLAUDE.md / GEMINI.md if present)"
   log ""
 
   pure unit
