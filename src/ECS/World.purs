@@ -34,6 +34,7 @@ module ECS.World
   , maskHasAny
   , maskAddBit
   , maskRemoveBit
+  , popcountMask
   -- Query cache helpers
   , makeQueryCacheKey
   , incrementStructuralVersion
@@ -47,7 +48,8 @@ import Prelude
 import Control.Monad.State (State, runState, state)
 import Data.Array (index, length, take, updateAt)
 import Data.Array as Array
-import Data.Int.Bits (complement, shl, (.&.), (.|.))
+import Data.Foldable (sum)
+import Data.Int.Bits (complement, shl, zshr, (.&.), (.|.))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -507,6 +509,20 @@ maskRemoveBit (ComponentMask ws) bit =
               updated = fromMaybe ws (Array.updateAt wordIx cleared ws)
             in
               ComponentMask (trimTrailingZeros updated)
+
+-- | Population count over a `ComponentMask` (the number of set bits).
+-- |
+-- | Implemented via Brian Kernighan-style per-word loop using `zshr` so the
+-- | sign bit doesn't propagate. Useful as a cross-check for archetype
+-- | invariants: `popcountMask arch.mask` should equal `Set.size arch.labels`.
+popcountMask :: ComponentMask -> Int
+popcountMask (ComponentMask ws) = sum (map popcount32 ws)
+
+popcount32 :: Int -> Int
+popcount32 = go 0
+  where
+    go acc 0 = acc
+    go acc n = go (acc + (n .&. 1)) (n `zshr` 1)
 
 -- | Pad an array of Ints to at least `n` elements with trailing zeros.
 padToLength :: Int -> Array Int -> Array Int

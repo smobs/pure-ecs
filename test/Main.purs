@@ -5,6 +5,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Test.ECS.ComponentSpec (componentSpec)
+import Test.ECS.DebugSpec (debugSpec)
 import Test.ECS.Docs.WriteSpec (writeSpec)
 import Test.ECS.DocsSpec (docsSpec)
 import Test.ECS.EntitySpec (entitySpec)
@@ -28,3 +29,4 @@ main = launchAff_ $ runSpec [consoleReporter] do
   pipelineSpec
   docsSpec
   writeSpec
+  debugSpec
