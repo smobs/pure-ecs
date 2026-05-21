@@ -319,48 +319,52 @@ querySpec = do
     describe "Component-mask >31 labels regression" do
 
       it "single high-bit-only query returns only the entity that actually has it" do
-        let world0 = emptyWorld
-            -- Entity B: only the low-bit label that aliases bit 32.
-            {world: wB1, entity: eB} = spawnEntityPure world0
-            {world: wB2, entity: _} = addComponentPure (Proxy :: _ "c00") unit eB wB1
+        -- Entity B: only the low-bit label that aliases bit 32.
+        -- Use runState so we keep the resulting Entity reference for the
+        -- negative-space check at the end.
+        let Tuple eB worldAfterB = runState
+              ( spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+              ) emptyWorld
 
-            -- Entity A: all 33 labels c00 .. c32. The last addComponentPure
-            -- forces getOrCreateComponentMask to allocate bit 32.
-            {world: wA1, entity: eA00} = spawnEntityPure wB2
-            {world: wA2, entity: eA01} = addComponentPure (Proxy :: _ "c00") unit eA00 wA1
-            {world: wA3, entity: eA02} = addComponentPure (Proxy :: _ "c01") unit eA01 wA2
-            {world: wA4, entity: eA03} = addComponentPure (Proxy :: _ "c02") unit eA02 wA3
-            {world: wA5, entity: eA04} = addComponentPure (Proxy :: _ "c03") unit eA03 wA4
-            {world: wA6, entity: eA05} = addComponentPure (Proxy :: _ "c04") unit eA04 wA5
-            {world: wA7, entity: eA06} = addComponentPure (Proxy :: _ "c05") unit eA05 wA6
-            {world: wA8, entity: eA07} = addComponentPure (Proxy :: _ "c06") unit eA06 wA7
-            {world: wA9, entity: eA08} = addComponentPure (Proxy :: _ "c07") unit eA07 wA8
-            {world: wA10, entity: eA09} = addComponentPure (Proxy :: _ "c08") unit eA08 wA9
-            {world: wA11, entity: eA10} = addComponentPure (Proxy :: _ "c09") unit eA09 wA10
-            {world: wA12, entity: eA11} = addComponentPure (Proxy :: _ "c10") unit eA10 wA11
-            {world: wA13, entity: eA12} = addComponentPure (Proxy :: _ "c11") unit eA11 wA12
-            {world: wA14, entity: eA13} = addComponentPure (Proxy :: _ "c12") unit eA12 wA13
-            {world: wA15, entity: eA14} = addComponentPure (Proxy :: _ "c13") unit eA13 wA14
-            {world: wA16, entity: eA15} = addComponentPure (Proxy :: _ "c14") unit eA14 wA15
-            {world: wA17, entity: eA16} = addComponentPure (Proxy :: _ "c15") unit eA15 wA16
-            {world: wA18, entity: eA17} = addComponentPure (Proxy :: _ "c16") unit eA16 wA17
-            {world: wA19, entity: eA18} = addComponentPure (Proxy :: _ "c17") unit eA17 wA18
-            {world: wA20, entity: eA19} = addComponentPure (Proxy :: _ "c18") unit eA18 wA19
-            {world: wA21, entity: eA20} = addComponentPure (Proxy :: _ "c19") unit eA19 wA20
-            {world: wA22, entity: eA21} = addComponentPure (Proxy :: _ "c20") unit eA20 wA21
-            {world: wA23, entity: eA22} = addComponentPure (Proxy :: _ "c21") unit eA21 wA22
-            {world: wA24, entity: eA23} = addComponentPure (Proxy :: _ "c22") unit eA22 wA23
-            {world: wA25, entity: eA24} = addComponentPure (Proxy :: _ "c23") unit eA23 wA24
-            {world: wA26, entity: eA25} = addComponentPure (Proxy :: _ "c24") unit eA24 wA25
-            {world: wA27, entity: eA26} = addComponentPure (Proxy :: _ "c25") unit eA25 wA26
-            {world: wA28, entity: eA27} = addComponentPure (Proxy :: _ "c26") unit eA26 wA27
-            {world: wA29, entity: eA28} = addComponentPure (Proxy :: _ "c27") unit eA27 wA28
-            {world: wA30, entity: eA29} = addComponentPure (Proxy :: _ "c28") unit eA28 wA29
-            {world: wA31, entity: eA30} = addComponentPure (Proxy :: _ "c29") unit eA29 wA30
-            {world: wA32, entity: eA31} = addComponentPure (Proxy :: _ "c30") unit eA30 wA31
-            {world: wA33, entity: eA32} = addComponentPure (Proxy :: _ "c31") unit eA31 wA32
-            -- This add allocates bit 32 in the component registry.
-            {world: wA34, entity: _} = addComponentPure (Proxy :: _ "c32") unit eA32 wA33
+            -- Entity A: all 33 labels c00 .. c32. The last component
+            -- addition forces getOrCreateComponentMask to allocate bit 32.
+            wA34 = execState
+              ( void $ spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+                  <+> (Proxy :: _ "c01") := unit
+                  <+> (Proxy :: _ "c02") := unit
+                  <+> (Proxy :: _ "c03") := unit
+                  <+> (Proxy :: _ "c04") := unit
+                  <+> (Proxy :: _ "c05") := unit
+                  <+> (Proxy :: _ "c06") := unit
+                  <+> (Proxy :: _ "c07") := unit
+                  <+> (Proxy :: _ "c08") := unit
+                  <+> (Proxy :: _ "c09") := unit
+                  <+> (Proxy :: _ "c10") := unit
+                  <+> (Proxy :: _ "c11") := unit
+                  <+> (Proxy :: _ "c12") := unit
+                  <+> (Proxy :: _ "c13") := unit
+                  <+> (Proxy :: _ "c14") := unit
+                  <+> (Proxy :: _ "c15") := unit
+                  <+> (Proxy :: _ "c16") := unit
+                  <+> (Proxy :: _ "c17") := unit
+                  <+> (Proxy :: _ "c18") := unit
+                  <+> (Proxy :: _ "c19") := unit
+                  <+> (Proxy :: _ "c20") := unit
+                  <+> (Proxy :: _ "c21") := unit
+                  <+> (Proxy :: _ "c22") := unit
+                  <+> (Proxy :: _ "c23") := unit
+                  <+> (Proxy :: _ "c24") := unit
+                  <+> (Proxy :: _ "c25") := unit
+                  <+> (Proxy :: _ "c26") := unit
+                  <+> (Proxy :: _ "c27") := unit
+                  <+> (Proxy :: _ "c28") := unit
+                  <+> (Proxy :: _ "c29") := unit
+                  <+> (Proxy :: _ "c30") := unit
+                  <+> (Proxy :: _ "c31") := unit
+                  <+> (Proxy :: _ "c32") := unit
+              ) worldAfterB
 
             q :: _ (c32 :: Unit) ()
             q = query (Proxy :: _ (c32 :: Unit))
@@ -402,48 +406,50 @@ querySpec = do
         --     `+ (1 \`shl\` bit)`, so required != 1), but A's archetype mask
         --     is 1. The bitmask predicate maskContains fails, and the query
         --     returns 0 results.
-        let world0 = emptyWorld
-
-            -- Sacrificial entity: burns bits 0..31 in the registry.
-            {world: ws01, entity: s00} = spawnEntityPure world0
-            {world: ws02, entity: s01} = addComponentPure (Proxy :: _ "c00") unit s00 ws01
-            {world: ws03, entity: s02} = addComponentPure (Proxy :: _ "c01") unit s01 ws02
-            {world: ws04, entity: s03} = addComponentPure (Proxy :: _ "c02") unit s02 ws03
-            {world: ws05, entity: s04} = addComponentPure (Proxy :: _ "c03") unit s03 ws04
-            {world: ws06, entity: s05} = addComponentPure (Proxy :: _ "c04") unit s04 ws05
-            {world: ws07, entity: s06} = addComponentPure (Proxy :: _ "c05") unit s05 ws06
-            {world: ws08, entity: s07} = addComponentPure (Proxy :: _ "c06") unit s06 ws07
-            {world: ws09, entity: s08} = addComponentPure (Proxy :: _ "c07") unit s07 ws08
-            {world: ws10, entity: s09} = addComponentPure (Proxy :: _ "c08") unit s08 ws09
-            {world: ws11, entity: s10} = addComponentPure (Proxy :: _ "c09") unit s09 ws10
-            {world: ws12, entity: s11} = addComponentPure (Proxy :: _ "c10") unit s10 ws11
-            {world: ws13, entity: s12} = addComponentPure (Proxy :: _ "c11") unit s11 ws12
-            {world: ws14, entity: s13} = addComponentPure (Proxy :: _ "c12") unit s12 ws13
-            {world: ws15, entity: s14} = addComponentPure (Proxy :: _ "c13") unit s13 ws14
-            {world: ws16, entity: s15} = addComponentPure (Proxy :: _ "c14") unit s14 ws15
-            {world: ws17, entity: s16} = addComponentPure (Proxy :: _ "c15") unit s15 ws16
-            {world: ws18, entity: s17} = addComponentPure (Proxy :: _ "c16") unit s16 ws17
-            {world: ws19, entity: s18} = addComponentPure (Proxy :: _ "c17") unit s17 ws18
-            {world: ws20, entity: s19} = addComponentPure (Proxy :: _ "c18") unit s18 ws19
-            {world: ws21, entity: s20} = addComponentPure (Proxy :: _ "c19") unit s19 ws20
-            {world: ws22, entity: s21} = addComponentPure (Proxy :: _ "c20") unit s20 ws21
-            {world: ws23, entity: s22} = addComponentPure (Proxy :: _ "c21") unit s21 ws22
-            {world: ws24, entity: s23} = addComponentPure (Proxy :: _ "c22") unit s22 ws23
-            {world: ws25, entity: s24} = addComponentPure (Proxy :: _ "c23") unit s23 ws24
-            {world: ws26, entity: s25} = addComponentPure (Proxy :: _ "c24") unit s24 ws25
-            {world: ws27, entity: s26} = addComponentPure (Proxy :: _ "c25") unit s25 ws26
-            {world: ws28, entity: s27} = addComponentPure (Proxy :: _ "c26") unit s26 ws27
-            {world: ws29, entity: s28} = addComponentPure (Proxy :: _ "c27") unit s27 ws28
-            {world: ws30, entity: s29} = addComponentPure (Proxy :: _ "c28") unit s28 ws29
-            {world: ws31, entity: s30} = addComponentPure (Proxy :: _ "c29") unit s29 ws30
-            {world: ws32, entity: s31} = addComponentPure (Proxy :: _ "c30") unit s30 ws31
-            {world: ws33, entity: _}   = addComponentPure (Proxy :: _ "c31") unit s31 ws32
+        -- Sacrificial entity: burns bits 0..31 in the registry.
+        let ws33 = execState
+              ( void $ spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+                  <+> (Proxy :: _ "c01") := unit
+                  <+> (Proxy :: _ "c02") := unit
+                  <+> (Proxy :: _ "c03") := unit
+                  <+> (Proxy :: _ "c04") := unit
+                  <+> (Proxy :: _ "c05") := unit
+                  <+> (Proxy :: _ "c06") := unit
+                  <+> (Proxy :: _ "c07") := unit
+                  <+> (Proxy :: _ "c08") := unit
+                  <+> (Proxy :: _ "c09") := unit
+                  <+> (Proxy :: _ "c10") := unit
+                  <+> (Proxy :: _ "c11") := unit
+                  <+> (Proxy :: _ "c12") := unit
+                  <+> (Proxy :: _ "c13") := unit
+                  <+> (Proxy :: _ "c14") := unit
+                  <+> (Proxy :: _ "c15") := unit
+                  <+> (Proxy :: _ "c16") := unit
+                  <+> (Proxy :: _ "c17") := unit
+                  <+> (Proxy :: _ "c18") := unit
+                  <+> (Proxy :: _ "c19") := unit
+                  <+> (Proxy :: _ "c20") := unit
+                  <+> (Proxy :: _ "c21") := unit
+                  <+> (Proxy :: _ "c22") := unit
+                  <+> (Proxy :: _ "c23") := unit
+                  <+> (Proxy :: _ "c24") := unit
+                  <+> (Proxy :: _ "c25") := unit
+                  <+> (Proxy :: _ "c26") := unit
+                  <+> (Proxy :: _ "c27") := unit
+                  <+> (Proxy :: _ "c28") := unit
+                  <+> (Proxy :: _ "c29") := unit
+                  <+> (Proxy :: _ "c30") := unit
+                  <+> (Proxy :: _ "c31") := unit
+              ) emptyWorld
 
             -- Entity A: only c00 and c32. With bits 0..31 already allocated,
             -- c32 will be assigned bit 32 (which overflows to bit 0 in JS).
-            {world: wA1, entity: a0} = spawnEntityPure ws33
-            {world: wA2, entity: a1} = addComponentPure (Proxy :: _ "c00") unit a0 wA1
-            {world: wA3, entity: _}  = addComponentPure (Proxy :: _ "c32") unit a1 wA2
+            wA3 = execState
+              ( void $ spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+                  <+> (Proxy :: _ "c32") := unit
+              ) ws33
 
             q :: _ (c00 :: Unit, c32 :: Unit) ()
             q = query (Proxy :: _ (c00 :: Unit, c32 :: Unit))
@@ -466,47 +472,52 @@ querySpec = do
         -- Bug-report symptom: getComponent finds each component individually
         -- while a multi-component query misses the entity entirely. This
         -- test pins down agreement between the two paths.
-        let world0 = emptyWorld
+        --
+        -- Burn bits 0..31 with a sacrificial entity.
+        let ws33 = execState
+              ( void $ spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+                  <+> (Proxy :: _ "c01") := unit
+                  <+> (Proxy :: _ "c02") := unit
+                  <+> (Proxy :: _ "c03") := unit
+                  <+> (Proxy :: _ "c04") := unit
+                  <+> (Proxy :: _ "c05") := unit
+                  <+> (Proxy :: _ "c06") := unit
+                  <+> (Proxy :: _ "c07") := unit
+                  <+> (Proxy :: _ "c08") := unit
+                  <+> (Proxy :: _ "c09") := unit
+                  <+> (Proxy :: _ "c10") := unit
+                  <+> (Proxy :: _ "c11") := unit
+                  <+> (Proxy :: _ "c12") := unit
+                  <+> (Proxy :: _ "c13") := unit
+                  <+> (Proxy :: _ "c14") := unit
+                  <+> (Proxy :: _ "c15") := unit
+                  <+> (Proxy :: _ "c16") := unit
+                  <+> (Proxy :: _ "c17") := unit
+                  <+> (Proxy :: _ "c18") := unit
+                  <+> (Proxy :: _ "c19") := unit
+                  <+> (Proxy :: _ "c20") := unit
+                  <+> (Proxy :: _ "c21") := unit
+                  <+> (Proxy :: _ "c22") := unit
+                  <+> (Proxy :: _ "c23") := unit
+                  <+> (Proxy :: _ "c24") := unit
+                  <+> (Proxy :: _ "c25") := unit
+                  <+> (Proxy :: _ "c26") := unit
+                  <+> (Proxy :: _ "c27") := unit
+                  <+> (Proxy :: _ "c28") := unit
+                  <+> (Proxy :: _ "c29") := unit
+                  <+> (Proxy :: _ "c30") := unit
+                  <+> (Proxy :: _ "c31") := unit
+              ) emptyWorld
 
-            -- Burn bits 0..31.
-            {world: ws01, entity: s00} = spawnEntityPure world0
-            {world: ws02, entity: s01} = addComponentPure (Proxy :: _ "c00") unit s00 ws01
-            {world: ws03, entity: s02} = addComponentPure (Proxy :: _ "c01") unit s01 ws02
-            {world: ws04, entity: s03} = addComponentPure (Proxy :: _ "c02") unit s02 ws03
-            {world: ws05, entity: s04} = addComponentPure (Proxy :: _ "c03") unit s03 ws04
-            {world: ws06, entity: s05} = addComponentPure (Proxy :: _ "c04") unit s04 ws05
-            {world: ws07, entity: s06} = addComponentPure (Proxy :: _ "c05") unit s05 ws06
-            {world: ws08, entity: s07} = addComponentPure (Proxy :: _ "c06") unit s06 ws07
-            {world: ws09, entity: s08} = addComponentPure (Proxy :: _ "c07") unit s07 ws08
-            {world: ws10, entity: s09} = addComponentPure (Proxy :: _ "c08") unit s08 ws09
-            {world: ws11, entity: s10} = addComponentPure (Proxy :: _ "c09") unit s09 ws10
-            {world: ws12, entity: s11} = addComponentPure (Proxy :: _ "c10") unit s10 ws11
-            {world: ws13, entity: s12} = addComponentPure (Proxy :: _ "c11") unit s11 ws12
-            {world: ws14, entity: s13} = addComponentPure (Proxy :: _ "c12") unit s12 ws13
-            {world: ws15, entity: s14} = addComponentPure (Proxy :: _ "c13") unit s13 ws14
-            {world: ws16, entity: s15} = addComponentPure (Proxy :: _ "c14") unit s14 ws15
-            {world: ws17, entity: s16} = addComponentPure (Proxy :: _ "c15") unit s15 ws16
-            {world: ws18, entity: s17} = addComponentPure (Proxy :: _ "c16") unit s16 ws17
-            {world: ws19, entity: s18} = addComponentPure (Proxy :: _ "c17") unit s17 ws18
-            {world: ws20, entity: s19} = addComponentPure (Proxy :: _ "c18") unit s18 ws19
-            {world: ws21, entity: s20} = addComponentPure (Proxy :: _ "c19") unit s19 ws20
-            {world: ws22, entity: s21} = addComponentPure (Proxy :: _ "c20") unit s20 ws21
-            {world: ws23, entity: s22} = addComponentPure (Proxy :: _ "c21") unit s21 ws22
-            {world: ws24, entity: s23} = addComponentPure (Proxy :: _ "c22") unit s22 ws23
-            {world: ws25, entity: s24} = addComponentPure (Proxy :: _ "c23") unit s23 ws24
-            {world: ws26, entity: s25} = addComponentPure (Proxy :: _ "c24") unit s24 ws25
-            {world: ws27, entity: s26} = addComponentPure (Proxy :: _ "c25") unit s25 ws26
-            {world: ws28, entity: s27} = addComponentPure (Proxy :: _ "c26") unit s26 ws27
-            {world: ws29, entity: s28} = addComponentPure (Proxy :: _ "c27") unit s27 ws28
-            {world: ws30, entity: s29} = addComponentPure (Proxy :: _ "c28") unit s28 ws29
-            {world: ws31, entity: s30} = addComponentPure (Proxy :: _ "c29") unit s29 ws30
-            {world: ws32, entity: s31} = addComponentPure (Proxy :: _ "c30") unit s30 ws31
-            {world: ws33, entity: _}   = addComponentPure (Proxy :: _ "c31") unit s31 ws32
-
-            -- Entity A: c00 + c32 (forces bit 32 allocation).
-            {world: wA1, entity: a0} = spawnEntityPure ws33
-            {world: wA2, entity: a1} = addComponentPure (Proxy :: _ "c00") unit a0 wA1
-            {world: wA3, entity: a2} = addComponentPure (Proxy :: _ "c32") unit a1 wA2
+            -- Entity A: c00 + c32 (forces bit 32 allocation). Need both the
+            -- entity reference (for getComponentPure) and the final world,
+            -- so use runState.
+            Tuple a2 wA3 = runState
+              ( spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+                  <+> (Proxy :: _ "c32") := unit
+              ) ws33
 
             -- getComponent on each label individually.
             mC00 = getComponentPure (Proxy :: _ "c00") a2 wA3
@@ -530,42 +541,43 @@ querySpec = do
         -- on structuralVersion bump. Test that adding an entity with a
         -- high-bit component AFTER a cached miss causes the next call to
         -- include it.
-        let world0 = emptyWorld
-
-            -- Burn bits 0..31 with a sacrificial entity.
-            {world: ws01, entity: s00} = spawnEntityPure world0
-            {world: ws02, entity: s01} = addComponentPure (Proxy :: _ "c00") unit s00 ws01
-            {world: ws03, entity: s02} = addComponentPure (Proxy :: _ "c01") unit s01 ws02
-            {world: ws04, entity: s03} = addComponentPure (Proxy :: _ "c02") unit s02 ws03
-            {world: ws05, entity: s04} = addComponentPure (Proxy :: _ "c03") unit s03 ws04
-            {world: ws06, entity: s05} = addComponentPure (Proxy :: _ "c04") unit s04 ws05
-            {world: ws07, entity: s06} = addComponentPure (Proxy :: _ "c05") unit s05 ws06
-            {world: ws08, entity: s07} = addComponentPure (Proxy :: _ "c06") unit s06 ws07
-            {world: ws09, entity: s08} = addComponentPure (Proxy :: _ "c07") unit s07 ws08
-            {world: ws10, entity: s09} = addComponentPure (Proxy :: _ "c08") unit s08 ws09
-            {world: ws11, entity: s10} = addComponentPure (Proxy :: _ "c09") unit s09 ws10
-            {world: ws12, entity: s11} = addComponentPure (Proxy :: _ "c10") unit s10 ws11
-            {world: ws13, entity: s12} = addComponentPure (Proxy :: _ "c11") unit s11 ws12
-            {world: ws14, entity: s13} = addComponentPure (Proxy :: _ "c12") unit s12 ws13
-            {world: ws15, entity: s14} = addComponentPure (Proxy :: _ "c13") unit s13 ws14
-            {world: ws16, entity: s15} = addComponentPure (Proxy :: _ "c14") unit s14 ws15
-            {world: ws17, entity: s16} = addComponentPure (Proxy :: _ "c15") unit s15 ws16
-            {world: ws18, entity: s17} = addComponentPure (Proxy :: _ "c16") unit s16 ws17
-            {world: ws19, entity: s18} = addComponentPure (Proxy :: _ "c17") unit s17 ws18
-            {world: ws20, entity: s19} = addComponentPure (Proxy :: _ "c18") unit s18 ws19
-            {world: ws21, entity: s20} = addComponentPure (Proxy :: _ "c19") unit s19 ws20
-            {world: ws22, entity: s21} = addComponentPure (Proxy :: _ "c20") unit s20 ws21
-            {world: ws23, entity: s22} = addComponentPure (Proxy :: _ "c21") unit s21 ws22
-            {world: ws24, entity: s23} = addComponentPure (Proxy :: _ "c22") unit s22 ws23
-            {world: ws25, entity: s24} = addComponentPure (Proxy :: _ "c23") unit s23 ws24
-            {world: ws26, entity: s25} = addComponentPure (Proxy :: _ "c24") unit s24 ws25
-            {world: ws27, entity: s26} = addComponentPure (Proxy :: _ "c25") unit s25 ws26
-            {world: ws28, entity: s27} = addComponentPure (Proxy :: _ "c26") unit s26 ws27
-            {world: ws29, entity: s28} = addComponentPure (Proxy :: _ "c27") unit s27 ws28
-            {world: ws30, entity: s29} = addComponentPure (Proxy :: _ "c28") unit s28 ws29
-            {world: ws31, entity: s30} = addComponentPure (Proxy :: _ "c29") unit s29 ws30
-            {world: ws32, entity: s31} = addComponentPure (Proxy :: _ "c30") unit s30 ws31
-            {world: ws33, entity: _}   = addComponentPure (Proxy :: _ "c31") unit s31 ws32
+        --
+        -- Burn bits 0..31 with a sacrificial entity.
+        let ws33 = execState
+              ( void $ spawnEntity
+                  <+> (Proxy :: _ "c00") := unit
+                  <+> (Proxy :: _ "c01") := unit
+                  <+> (Proxy :: _ "c02") := unit
+                  <+> (Proxy :: _ "c03") := unit
+                  <+> (Proxy :: _ "c04") := unit
+                  <+> (Proxy :: _ "c05") := unit
+                  <+> (Proxy :: _ "c06") := unit
+                  <+> (Proxy :: _ "c07") := unit
+                  <+> (Proxy :: _ "c08") := unit
+                  <+> (Proxy :: _ "c09") := unit
+                  <+> (Proxy :: _ "c10") := unit
+                  <+> (Proxy :: _ "c11") := unit
+                  <+> (Proxy :: _ "c12") := unit
+                  <+> (Proxy :: _ "c13") := unit
+                  <+> (Proxy :: _ "c14") := unit
+                  <+> (Proxy :: _ "c15") := unit
+                  <+> (Proxy :: _ "c16") := unit
+                  <+> (Proxy :: _ "c17") := unit
+                  <+> (Proxy :: _ "c18") := unit
+                  <+> (Proxy :: _ "c19") := unit
+                  <+> (Proxy :: _ "c20") := unit
+                  <+> (Proxy :: _ "c21") := unit
+                  <+> (Proxy :: _ "c22") := unit
+                  <+> (Proxy :: _ "c23") := unit
+                  <+> (Proxy :: _ "c24") := unit
+                  <+> (Proxy :: _ "c25") := unit
+                  <+> (Proxy :: _ "c26") := unit
+                  <+> (Proxy :: _ "c27") := unit
+                  <+> (Proxy :: _ "c28") := unit
+                  <+> (Proxy :: _ "c29") := unit
+                  <+> (Proxy :: _ "c30") := unit
+                  <+> (Proxy :: _ "c31") := unit
+              ) emptyWorld
 
             q :: _ (c32 :: Unit) ()
             q = query (Proxy :: _ (c32 :: Unit))
@@ -577,9 +589,13 @@ querySpec = do
             r1 = runQueryCached q ws33
 
             -- Add an entity carrying c32 (forces bit-32 allocation AND
-            -- creates a new archetype → structuralVersion bumps).
-            {world: wA1, entity: a0} = spawnEntityPure r1.world
-            {world: wA2, entity: _}  = addComponentPure (Proxy :: _ "c32") unit a0 wA1
+            -- creates a new archetype → structuralVersion bumps). Resume
+            -- from r1.world so any cache populated by the first call is
+            -- retained.
+            wA2 = execState
+              ( void $ spawnEntity
+                  <+> (Proxy :: _ "c32") := unit
+              ) r1.world
 
             -- Second call: must NOT use a stale cache that pre-dates the
             -- new archetype.
