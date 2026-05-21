@@ -29,13 +29,12 @@ import Prelude
 import Data.Array (foldl)
 import Data.Array as Array
 import Data.Foldable (foldl) as F
-import Data.Int.Bits (shl)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple.Nested (type (/\), (/\))
-import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, CachedQueryResult, wrapEntity, maskContains, maskHasAny, makeQueryCacheKey)
+import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, CachedQueryResult, wrapEntity, emptyMask, maskAddBit, maskContains, maskHasAny, makeQueryCacheKey)
 import ECS.Internal.ComponentStorage as CS
 import Prim.Row (class Cons, class Lacks)
 import Prim.RowList (class RowToList, RowList)
@@ -156,9 +155,9 @@ labelsToMaskStrict labels world =
       Nothing -> Nothing  -- Already failed
       Just acc ->
         case Map.lookup label world.componentRegistry.labelToBit of
-          Just bit -> Just (acc + (1 `shl` bit))
+          Just bit -> Just (maskAddBit acc bit)
           Nothing -> Nothing  -- Label not registered, no matches possible
-  ) (Just 0) labels
+  ) (Just emptyMask) labels
 
 -- | Convert a set of labels to a bitmask using the world's registry.
 -- | Labels not found are ignored (used for exclusion where missing = no exclusion).
@@ -166,9 +165,9 @@ labelsToMask :: Set String -> World -> ComponentMask
 labelsToMask labels world =
   F.foldl (\mask label ->
     case Map.lookup label world.componentRegistry.labelToBit of
-      Just bit -> mask + (1 `shl` bit)
-      Nothing -> mask  -- Label not registered, treat as 0
-  ) 0 labels
+      Just bit -> maskAddBit mask bit
+      Nothing -> mask  -- Label not registered, treat as empty
+  ) emptyMask labels
 
 -- | Check if archetype matches query using O(1) bitmask operations.
 -- |

@@ -379,7 +379,7 @@ A = archetypes, N = entities in matching archetypes, C = required components per
 | getComponent | O(log A + log N) | O(1) | Map.lookup × 2 + Array.index |
 | despawnEntity | O(log A + log N) | O(1) | Swap-remove with position map |
 | query (cached) | O(N + C·N) | O(N) | One column read per (entity, component); archetype filter served from cache |
-| query (uncached) | O(A + N + C·N) | O(N) | First call also computes archetype filter from bitmasks |
+| query (uncached) | O(A·W + N + C·N) | O(N) | First call also computes archetype filter from bitmasks; W = ⌈registered components / 32⌉, typically 1–2 |
 | runSystem | depends on body | depends | Composes via State monad |
 
 **Hot-path principle:** `updateComponent`/`modifyComponent` (and their `_` variants) route through `setComponentPure` internally — value writes never trigger archetype migration. Only `addComponent`/`removeComponent` (which change the row type) pay migration cost. Inside a `for_ results …` loop, value updates are O(1) per call rather than O(N·C).

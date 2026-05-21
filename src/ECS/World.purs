@@ -28,6 +28,8 @@ module ECS.World
   , getComponentMask
   , getOrCreateComponentMask
   , bitToMask
+  , emptyMask
+  , mkMask
   , maskContains
   , maskHasAny
   , maskAddBit
@@ -44,7 +46,8 @@ import Prelude
 
 import Control.Monad.State (State, runState, state)
 import Data.Array (index, length, take, updateAt)
-import Data.Int.Bits (shl, (.&.), (.|.))
+import Data.Array as Array
+import Data.Int.Bits (complement, shl, (.&.), (.|.))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -57,10 +60,34 @@ import ECS.Internal.ComponentStorage as CS
 
 -- | Bitmask for fast component matching.
 -- |
--- | Each component label is assigned a unique bit position (0-30).
--- | Supports up to 31 unique component types (Int is 32-bit signed).
--- | Archetype matching becomes O(1) bitwise AND instead of O(C) set operations.
-type ComponentMask = Int
+-- | Each component label is assigned a unique bit position (0, 1, 2, …).
+-- | The mask is a packed little-endian array of 32-bit words: word `i` carries
+-- | bits `[32*i, 32*i + 32)`. The array grows on demand as new labels register,
+-- | so the number of supported components is unbounded.
+-- |
+-- | INVARIANT (load-bearing): every `ComponentMask` value MUST be canonical —
+-- | i.e. have no trailing zero words. The derived `Eq` and `Ord` instances
+-- | are positional over the underlying `Array Int`, so two masks representing
+-- | the same set of bits compare equal **iff** both are canonical. Breaking
+-- | this invariant silently corrupts `world.archetypes` and `world.queryCache`
+-- | (they're `Map`-keyed by `ComponentMask`): a non-canonical mask creates a
+-- | parallel archetype key invisible to queries built from canonical masks.
+-- |
+-- | All in-module constructors (`emptyMask`, `maskAddBit`, `maskRemoveBit`,
+-- | `bitToMask`) preserve the invariant. The raw `ComponentMask` constructor
+-- | is NOT exported (see export list) so external callers cannot bypass it.
+-- | Inside this module, prefer `mkMask` over the raw constructor when
+-- | building a mask from an arbitrary `Array Int`.
+-- |
+-- | Archetype matching is O(W) where W = number of words in the required
+-- | mask (typically 1-2 for small games, ≤ ⌈N/32⌉ in general).
+newtype ComponentMask = ComponentMask (Array Int)
+
+derive newtype instance eqComponentMask :: Eq ComponentMask
+derive newtype instance ordComponentMask :: Ord ComponentMask
+
+instance showComponentMask :: Show ComponentMask where
+  show (ComponentMask ws) = "ComponentMask " <> show ws
 
 -- | Registry mapping component labels to their bit positions.
 -- |
@@ -145,9 +172,21 @@ type Archetype =
   , storage :: ComponentStorage
   }
 
--- | Empty archetype ID for newly spawned entities (mask = 0, no components).
+-- | Empty archetype ID for newly spawned entities (no components).
 emptyArchetypeId :: ArchetypeId
-emptyArchetypeId = 0
+emptyArchetypeId = emptyMask
+
+-- | The canonical empty mask. Equal to `bitToMask`-free state.
+emptyMask :: ComponentMask
+emptyMask = ComponentMask []
+
+-- | Safe smart constructor that canonicalises an arbitrary `Array Int` into
+-- | a valid `ComponentMask` by trimming trailing zero words. Use this from
+-- | any code that builds a mask from raw word data (deserialisation, FFI).
+-- | All other in-module construction paths preserve the canonical-form
+-- | invariant by construction and don't need to call this.
+mkMask :: Array Int -> ComponentMask
+mkMask ws = ComponentMask (trimTrailingZeros ws)
 
 -- | Create an empty world.
 -- |
@@ -363,7 +402,7 @@ getOrCreateEmptyArchetype :: Map ArchetypeId Archetype -> Archetype
 getOrCreateEmptyArchetype archetypes =
   case Map.lookup emptyArchetypeId archetypes of
     Just arch -> arch
-    Nothing -> { entities: [], entityPositions: Map.empty, mask: 0, labels: Set.empty, storage: CS.empty }
+    Nothing -> { entities: [], entityPositions: Map.empty, mask: emptyMask, labels: Set.empty, storage: CS.empty }
 
 -- | Get the bit position for a component label.
 -- |
@@ -394,40 +433,94 @@ getOrCreateComponentMask label world =
 
 -- | Create a bitmask from a single bit position.
 -- |
--- | Example: bitToMask 3 = 0b1000 = 8
+-- | Examples:
+-- |   bitToMask 3  = ComponentMask [8]
+-- |   bitToMask 32 = ComponentMask [0, 1]
 bitToMask :: Int -> ComponentMask
-bitToMask bit = 1 `shl` bit
+bitToMask bit = maskAddBit emptyMask bit
 
--- | Check if a mask contains all required bits.
+-- | Check if `archMask` contains every bit set in `requiredMask`.
 -- |
--- | (archMask .&. requiredMask) == requiredMask
+-- | Implemented word-by-word. If `requiredMask` extends beyond `archMask`
+-- | (later words exist on the required side), the missing arch words are
+-- | treated as zero and the predicate fails iff any required word is non-zero.
 maskContains :: ComponentMask -> ComponentMask -> Boolean
-maskContains archMask requiredMask =
-  (archMask .&. requiredMask) == requiredMask
+maskContains (ComponentMask arch) (ComponentMask req) =
+  go 0
+  where
+    nReq = Array.length req
+    go i
+      | i >= nReq = true
+      | otherwise =
+          let r = fromMaybe 0 (Array.index req i)
+              a = fromMaybe 0 (Array.index arch i)
+          in if (a .&. r) == r then go (i + 1) else false
 
--- | Check if a mask has any excluded bits.
+-- | Check if `archMask` shares any bits with `excludedMask`.
 -- |
--- | (archMask .&. excludedMask) /= 0
+-- | Implemented word-by-word over the overlap. Missing words on either side
+-- | are zero and contribute nothing.
 maskHasAny :: ComponentMask -> ComponentMask -> Boolean
-maskHasAny archMask excludedMask =
-  (archMask .&. excludedMask) /= 0
+maskHasAny (ComponentMask arch) (ComponentMask exc) =
+  go 0
+  where
+    nOverlap = min (Array.length arch) (Array.length exc)
+    go i
+      | i >= nOverlap = false
+      | otherwise =
+          let a = fromMaybe 0 (Array.index arch i)
+              e = fromMaybe 0 (Array.index exc i)
+          in if (a .&. e) /= 0 then true else go (i + 1)
 
--- | Add a bit to a mask.
--- |
--- | mask .|. (1 `shl` bit)
+-- | Add a bit to a mask. Extends the underlying word array on demand;
+-- | the result is already canonical (the just-set bit guarantees the
+-- | top word is non-zero).
 maskAddBit :: ComponentMask -> Int -> ComponentMask
-maskAddBit mask bit = mask .|. (1 `shl` bit)
+maskAddBit (ComponentMask ws) bit =
+  let
+    wordIx = bit `div` 32
+    bitInWord = bit `mod` 32
+    bitValue = 1 `shl` bitInWord
+    extended = padToLength (wordIx + 1) ws
+    cur = fromMaybe 0 (Array.index extended wordIx)
+    updated = fromMaybe extended (Array.updateAt wordIx (cur .|. bitValue) extended)
+  in
+    ComponentMask updated
 
--- | Remove a bit from a mask.
--- |
--- | mask .&. complement (1 `shl` bit)
--- | Note: Using XOR since we know the bit is set
+-- | Remove a bit from a mask. Re-canonicalises by trimming trailing zero
+-- | words so `Eq`/`Ord` remain in agreement with the set of bits.
 maskRemoveBit :: ComponentMask -> Int -> ComponentMask
-maskRemoveBit mask bit =
-  let bitMask = 1 `shl` bit
-  in if (mask .&. bitMask) /= 0
-     then mask - bitMask  -- Equivalent to XOR when bit is set
-     else mask
+maskRemoveBit (ComponentMask ws) bit =
+  let
+    wordIx = bit `div` 32
+    bitInWord = bit `mod` 32
+    bitValue = 1 `shl` bitInWord
+  in
+    case Array.index ws wordIx of
+      Nothing -> ComponentMask ws  -- bit was already zero (word doesn't exist)
+      Just cur ->
+        if (cur .&. bitValue) == 0
+          then ComponentMask ws  -- bit was already zero
+          else
+            let
+              cleared = cur .&. complement bitValue
+              updated = fromMaybe ws (Array.updateAt wordIx cleared ws)
+            in
+              ComponentMask (trimTrailingZeros updated)
+
+-- | Pad an array of Ints to at least `n` elements with trailing zeros.
+padToLength :: Int -> Array Int -> Array Int
+padToLength n ws =
+  let cur = Array.length ws
+  in if cur >= n then ws else ws <> Array.replicate (n - cur) 0
+
+-- | Drop trailing zero words to keep canonical form (so `Eq`/`Ord` track
+-- | the set of set bits, not the representation length).
+trimTrailingZeros :: Array Int -> Array Int
+trimTrailingZeros ws =
+  case Array.last ws of
+    Just 0 -> trimTrailingZeros (Array.take (Array.length ws - 1) ws)
+    _      -> ws
 
 -- | Create a cache key from required and excluded masks.
 -- |

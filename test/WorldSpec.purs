@@ -7,9 +7,9 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 
 import ECS.Entity (entityIndex, entityVersion)
-import ECS.World (World, Entity, emptyWorld, despawnEntityPure, hasEntity, spawnEntityPure, unEntity)
+import ECS.World (World, Entity, ComponentMask, bitToMask, emptyMask, emptyWorld, despawnEntityPure, hasEntity, maskAddBit, maskContains, maskHasAny, maskRemoveBit, mkMask, spawnEntityPure, unEntity)
 import Test.Spec (Spec, describe, it)
-import Test.Spec.Assertions (shouldEqual)
+import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
 
 worldSpec :: Spec Unit
 worldSpec = do
@@ -55,7 +55,7 @@ worldSpec = do
         let result = spawnEntityPure emptyWorld
             entityId = unEntity result.entity
             maybeArchId = Map.lookup (entityIndex entityId) result.world.entityLocations
-        maybeArchId `shouldEqual` Just 0
+        maybeArchId `shouldEqual` Just emptyMask
 
       it "entityLocations updated correctly" do
         let r1 = spawnEntityPure emptyWorld
@@ -64,8 +64,8 @@ worldSpec = do
             idx2 = entityIndex (unEntity r2.entity)
             loc1 = Map.lookup idx1 r2.world.entityLocations
             loc2 = Map.lookup idx2 r2.world.entityLocations
-        loc1 `shouldEqual` Just 0
-        loc2 `shouldEqual` Just 0
+        loc1 `shouldEqual` Just emptyMask
+        loc2 `shouldEqual` Just emptyMask
 
     -- Entity Despawn Tests
     describe "Entity Despawn" do
@@ -132,7 +132,7 @@ worldSpec = do
         let result = spawnEntityPure emptyWorld
             idx = entityIndex (unEntity result.entity)
         -- Empty archetype should exist in world (checked by entityLocations)
-        Map.lookup idx result.world.entityLocations `shouldEqual` Just 0
+        Map.lookup idx result.world.entityLocations `shouldEqual` Just emptyMask
 
       it "multiple entities in same archetype" do
         let r1 = spawnEntityPure emptyWorld
@@ -145,17 +145,17 @@ worldSpec = do
             loc2 = Map.lookup idx2 r3.world.entityLocations
             loc3 = Map.lookup idx3 r3.world.entityLocations
         -- All should be in empty archetype
-        loc1 `shouldEqual` Just 0
-        loc2 `shouldEqual` Just 0
-        loc3 `shouldEqual` Just 0
+        loc1 `shouldEqual` Just emptyMask
+        loc2 `shouldEqual` Just emptyMask
+        loc3 `shouldEqual` Just emptyMask
 
       it "entityLocations tracks correct archetypes" do
         let r1 = spawnEntityPure emptyWorld
             r2 = spawnEntityPure r1.world
             idx1 = entityIndex (unEntity r1.entity)
             idx2 = entityIndex (unEntity r2.entity)
-        Map.lookup idx1 r2.world.entityLocations `shouldEqual` Just 0
-        Map.lookup idx2 r2.world.entityLocations `shouldEqual` Just 0
+        Map.lookup idx1 r2.world.entityLocations `shouldEqual` Just emptyMask
+        Map.lookup idx2 r2.world.entityLocations `shouldEqual` Just emptyMask
 
     -- Lifecycle Tests
     describe "Lifecycle Tests" do
@@ -225,6 +225,119 @@ worldSpec = do
             r = spawnEntityPure world
             world2 = despawnEntityPure r.entity r.world
         Map.isEmpty world2.entityLocations `shouldEqual` true
+
+    -- ComponentMask invariants and primitives
+    --
+    -- Two ComponentMask values compare equal iff both are canonical (no
+    -- trailing zero words). The derived Eq/Ord run positionally over the
+    -- underlying Array Int, so non-canonical masks silently corrupt
+    -- archetype and query-cache Map lookups. These tests pin down each
+    -- construction path's canonicalisation guarantee.
+    describe "ComponentMask invariants" do
+
+      it "emptyMask is canonical" do
+        emptyMask `shouldEqual` mkMask []
+
+      it "bitToMask 0 places the bit in the low word" do
+        bitToMask 0 `shouldEqual` mkMask [1]
+
+      it "bitToMask 32 places the bit in the second word, not aliased to bit 0" do
+        bitToMask 32 `shouldEqual` mkMask [0, 1]
+        bitToMask 32 `shouldNotEqual` bitToMask 0
+
+      it "bitToMask 63 (sign bit of word 1) is distinct from other corner bits" do
+        -- Bit 63 lands at the high bit of word 1. In JS-signed Int that
+        -- value is Int.minBound = -2^31; we avoid the literal here to
+        -- sidestep purs-backend-es's JSON-decoded-Int range check, but
+        -- the structural facts are what matter.
+        bitToMask 63 `shouldNotEqual` bitToMask 0
+        bitToMask 63 `shouldNotEqual` bitToMask 31
+        bitToMask 63 `shouldNotEqual` bitToMask 32
+        -- And bit 63 is canonical: maskContains finds it in itself.
+        maskContains (bitToMask 63) (bitToMask 63) `shouldEqual` true
+
+      it "bitToMask 64 places the bit in the third word" do
+        bitToMask 64 `shouldEqual` mkMask [0, 0, 1]
+        bitToMask 64 `shouldNotEqual` bitToMask 0
+
+      it "maskAddBit then maskRemoveBit of the same bit returns to emptyMask" do
+        -- Canonical-form regression: trimTrailingZeros must strip the
+        -- now-zero high word. Without it, ComponentMask [0,0] != emptyMask
+        -- and the archetype Map key for "no components" disagrees.
+        let m32 = maskAddBit emptyMask 32
+            back = maskRemoveBit m32 32
+        back `shouldEqual` emptyMask
+
+      it "maskAddBit then maskRemoveBit at bit 64 returns to emptyMask" do
+        let m64 = maskAddBit emptyMask 64
+            back = maskRemoveBit m64 64
+        back `shouldEqual` emptyMask
+
+      it "removing only the high bit shrinks a 2-word mask to a canonical 1-word mask" do
+        -- After removing bit 32 from {0, 32}, the result must compare byte-
+        -- for-byte equal to a freshly-built {0} mask. Otherwise the entity
+        -- migrates into a parallel archetype instead of joining the existing
+        -- single-bit archetype.
+        let m = maskAddBit (maskAddBit emptyMask 0) 32
+            back = maskRemoveBit m 32
+            fresh = maskAddBit emptyMask 0
+        back `shouldEqual` fresh
+
+      it "adding the same bit twice is a no-op (idempotent)" do
+        let m1 = maskAddBit emptyMask 5
+            m2 = maskAddBit m1 5
+        m2 `shouldEqual` m1
+
+      it "maskRemoveBit of a bit that isn't set is a no-op" do
+        let m = maskAddBit emptyMask 3   -- only bit 3
+            same = maskRemoveBit m 7      -- bit 7 not set; word exists
+        same `shouldEqual` m
+
+      it "maskRemoveBit on a word index that doesn't exist is a no-op" do
+        let m = maskAddBit emptyMask 3   -- 1-word mask
+            same = maskRemoveBit m 63     -- word 1 doesn't exist
+        same `shouldEqual` m
+
+      it "mkMask canonicalises non-canonical input" do
+        mkMask [1, 0, 0] `shouldEqual` mkMask [1]
+        mkMask [0, 0] `shouldEqual` emptyMask
+        mkMask [] `shouldEqual` emptyMask
+
+      it "maskContains: archetype with bit 0 contains required bit 0" do
+        maskContains (bitToMask 0) (bitToMask 0) `shouldEqual` true
+
+      it "maskContains: archetype without high bit does NOT contain required high bit" do
+        -- Negative space: this is the dual of the primary regression. A
+        -- broken maskContains that always returns true would pass the
+        -- inclusion tests but fail this one.
+        maskContains (bitToMask 0) (bitToMask 32) `shouldEqual` false
+
+      it "maskContains: 2-word archetype contains a 1-word required" do
+        let arch = maskAddBit (maskAddBit emptyMask 0) 32
+        maskContains arch (bitToMask 0) `shouldEqual` true
+
+      it "maskContains: 1-word archetype does NOT contain a 2-word required" do
+        let req = maskAddBit (maskAddBit emptyMask 0) 32
+        maskContains (bitToMask 0) req `shouldEqual` false
+
+      it "maskContains: 3-word archetype with gap word contains a low+high required" do
+        -- Bits 0 and 64 set, word 1 is zero. maskContains must walk every
+        -- required word, including the gap, not stop early.
+        let arch = maskAddBit (maskAddBit emptyMask 0) 64
+            req  = maskAddBit (maskAddBit emptyMask 0) 64
+        maskContains arch req `shouldEqual` true
+
+      it "maskHasAny: archetype shares a bit with exclusion" do
+        maskHasAny (bitToMask 5) (bitToMask 5) `shouldEqual` true
+
+      it "maskHasAny: archetype shares no bits with exclusion across words" do
+        maskHasAny (bitToMask 0) (bitToMask 32) `shouldEqual` false
+        maskHasAny (bitToMask 32) (bitToMask 0) `shouldEqual` false
+
+      it "maskHasAny: detects overlap in the high word" do
+        let arch = maskAddBit (maskAddBit emptyMask 0) 33
+            exc  = bitToMask 33
+        maskHasAny arch exc `shouldEqual` true
 
 -- Helper to check if all elements satisfy predicate
 all :: forall a. (a -> Boolean) -> Array a -> Boolean
