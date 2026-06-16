@@ -26,6 +26,7 @@ module ECS.Query
 
 import Prelude
 
+import Partial.Unsafe (unsafeCrashWith)
 import Data.Array (foldl)
 import Data.Array as Array
 import Data.Map as Map
@@ -322,9 +323,17 @@ instance readComponentsCons ::
 readColumnAt :: forall a. String -> Archetype -> Int -> a
 readColumnAt label arch rowIdx =
   case CS.lookup label arch.storage of
-    Nothing  -> CS.componentFromForeign (CS.componentToForeign unit)
+    Nothing  ->
+      unsafeCrashWith $
+        "ECS.Query.readColumnAt: required column '" <> label
+          <> "' missing from a matched archetype "
+          <> "(mask/labels/storage invariant violated)"
     Just col -> case CS.arrayIndex rowIdx col of
-      Nothing -> CS.componentFromForeign (CS.componentToForeign unit)
+      Nothing ->
+        unsafeCrashWith $
+          "ECS.Query.readColumnAt: row index " <> show rowIdx
+            <> " out of range for column '" <> label
+            <> "' (entity-array/row-index invariant violated)"
       Just fv -> CS.componentFromForeign fv
 
 -- | Build query results from a resolved archetype.

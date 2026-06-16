@@ -15,6 +15,7 @@
             "maybe",
             "node-fs",
             "ordered-collections",
+            "partial",
             "prelude",
             "record",
             "transformers",
