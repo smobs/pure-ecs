@@ -2,8 +2,12 @@ workspace:
   packageSet:
     registry: 56.4.0
   backend:
-    cmd: purs-backend-es
+    # Invoke via npx so a bare `spago build` resolves the locally-installed
+    # purs-backend-es (node_modules/.bin). Spawning the bare name fails with
+    # ENOENT outside an `npm run` context, which puts node_modules/.bin on PATH.
+    cmd: npx
     args:
+      - purs-backend-es
       - build
 
 package:
