@@ -28,13 +28,12 @@ import Prelude
 
 import Data.Array (foldl)
 import Data.Array as Array
-import Data.Foldable (foldl) as F
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Tuple.Nested (type (/\), (/\))
-import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, CachedQueryResult, wrapEntity, emptyMask, maskAddBit, maskContains, maskHasAny, makeQueryCacheKey)
+import ECS.World (World, Entity, ArchetypeId, Archetype, ComponentMask, QueryCacheKey, wrapEntity, maskContains, maskHasAny, makeQueryCacheKey, resolveQueryMasks)
 import ECS.Internal.ComponentStorage as CS
 import Prim.Row (class Cons, class Lacks)
 import Prim.RowList (class RowToList, RowList)
@@ -125,18 +124,15 @@ runQuery :: forall required excluded rl.
   Array (QueryResult required)
 runQuery (Query q) world =
   let
-    -- Convert labels to masks using the world's registry
-    -- If any required label is not registered, no archetype can match
-    requiredResult = labelsToMaskStrict q.requiredLabels world
-    excludedMask = labelsToMask q.excludedLabels world
+    resolved = resolveQueryMasks q.requiredLabels q.excludedLabels world
   in
-    case requiredResult of
+    case resolved.required of
       Nothing -> []  -- Required component not registered, no matches possible
       Just requiredMask ->
         let
-          -- Filter archetypes whose mask matches required/excluded constraints.
-          -- Thread the (archId, arch) pair through to avoid an O(A) reverse
-          -- lookup per match (was O(A^2) total).
+          excludedMask = resolved.excluded
+          -- Filter archetypes whose mask matches required/excluded constraints,
+          -- threading the (archId, arch) pair to avoid a reverse lookup.
           matches :: Array (ArchetypeId /\ Archetype)
           matches = Array.filter
             (\(_ /\ arch) -> archetypeMatchesMask arch.mask requiredMask excludedMask)
@@ -145,29 +141,6 @@ runQuery (Query q) world =
           Array.concatMap
             (\(_ /\ arch) -> extractEntities (Proxy :: Proxy rl) arch)
             matches
-
--- | Convert a set of labels to a bitmask using the world's registry.
--- | Returns Nothing if any label is not registered (meaning no matches possible).
-labelsToMaskStrict :: Set String -> World -> Maybe ComponentMask
-labelsToMaskStrict labels world =
-  F.foldl (\maybeAcc label ->
-    case maybeAcc of
-      Nothing -> Nothing  -- Already failed
-      Just acc ->
-        case Map.lookup label world.componentRegistry.labelToBit of
-          Just bit -> Just (maskAddBit acc bit)
-          Nothing -> Nothing  -- Label not registered, no matches possible
-  ) (Just emptyMask) labels
-
--- | Convert a set of labels to a bitmask using the world's registry.
--- | Labels not found are ignored (used for exclusion where missing = no exclusion).
-labelsToMask :: Set String -> World -> ComponentMask
-labelsToMask labels world =
-  F.foldl (\mask label ->
-    case Map.lookup label world.componentRegistry.labelToBit of
-      Just bit -> maskAddBit mask bit
-      Nothing -> mask  -- Label not registered, treat as empty
-  ) emptyMask labels
 
 -- | Check if archetype matches query using O(1) bitmask operations.
 -- |
@@ -198,25 +171,22 @@ runQueryCached :: forall required excluded rl.
   { results :: Array (QueryResult required), world :: World }
 runQueryCached (Query q) world =
   let
-    -- Convert labels to masks
-    requiredResult = labelsToMaskStrict q.requiredLabels world
-    excludedMask = labelsToMask q.excludedLabels world
+    resolved = resolveQueryMasks q.requiredLabels q.excludedLabels world
+    world1   = resolved.world  -- world with the mask cache possibly updated
   in
-    case requiredResult of
-      Nothing -> { results: [], world }  -- Required component not registered
+    case resolved.required of
+      Nothing -> { results: [], world: world1 }  -- Required component not registered
       Just requiredMask ->
         let
-          -- Create cache key
+          excludedMask = resolved.excluded
           cacheKey = makeQueryCacheKey requiredMask excludedMask
-
-          -- Check cache
-          cacheResult = checkCache cacheKey world
+          cacheResult = checkCache cacheKey world1
 
           -- Get matching archetype IDs (from cache or compute)
           { matchingArchIds, world': worldAfterCache } = case cacheResult of
             Just archIds ->
               -- Cache hit! Use cached archetype IDs
-              { matchingArchIds: archIds, world': world }
+              { matchingArchIds: archIds, world': world1 }
             Nothing ->
               -- Cache miss - compute and cache (single-pass mapMaybe)
               let
@@ -225,13 +195,12 @@ runQueryCached (Query q) world =
                       if archetypeMatchesMask arch.mask requiredMask excludedMask
                         then Just archId
                         else Nothing)
-                  (Map.toUnfoldable world.archetypes)
-                -- Update cache
-                newCacheEntry = { matchingArchetypes: archIds, version: world.structuralVersion }
-                updatedCache = Map.insert cacheKey newCacheEntry world.queryCache
+                  (Map.toUnfoldable world1.archetypes)
+                newCacheEntry = { matchingArchetypes: archIds, version: world1.structuralVersion }
+                updatedCache = Map.insert cacheKey newCacheEntry world1.queryCache
               in
                 { matchingArchIds: archIds
-                , world': world { queryCache = updatedCache }
+                , world': world1 { queryCache = updatedCache }
                 }
 
           -- Extract results from matching archetypes (single-pass concatMap)

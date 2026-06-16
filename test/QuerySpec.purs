@@ -620,6 +620,23 @@ querySpec = do
         length r1.results `shouldEqual` 0
         length r2.results `shouldEqual` 1
 
+      it "mask-resolution cache re-resolves when a new component registers (Win A)" do
+        -- runQueryCached memoises label->mask resolution, guarded by the
+        -- registry's nextBit. A query for an unregistered label resolves to
+        -- Nothing (empty results) and caches that. After the label registers
+        -- (nextBit grows), the SAME query must re-resolve and find the entity.
+        let q :: _ (mana :: Int) ()
+            q = query (Proxy :: _ (mana :: Int))
+            -- First call: 'mana' unregistered -> Nothing -> [] (caches the
+            -- resolution at the current nextBit).
+            r1 = runQueryCached q emptyWorld
+            -- Spawn an entity carrying 'mana' (registers it, grows nextBit).
+            w1 = execState (void $ spawnEntity <+> (Proxy :: _ "mana") := 5) r1.world
+            -- Second call must re-resolve and see the entity.
+            r2 = runQueryCached q w1
+        length r1.results `shouldEqual` 0
+        length r2.results `shouldEqual` 1
+
     -- Edge Cases
     describe "Edge Cases" do
 

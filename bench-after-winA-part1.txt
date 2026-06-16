@@ -1,0 +1,22 @@
+Win A part 1 — World-level mask-resolution cache (P1)
+
+Representative run (immediately after bundle):
+spawn 1000 entities (3 components each): 41 ms (avg of 5, sink=4)
+query+update (pos, vel) over 1000 entities: 9 ms (avg of 5, sink=4)
+10 movement ticks over 1000 entities: 59 ms (avg of 5, sink=4)
+
+Baseline (bench-pre-followup.txt): 37 / 7 / 60 ms.
+
+HONEST NON-RESULT: no measurable delta. Two reasons:
+  1. These scenarios query @(position, velocity) — only 2 labels — so the
+     per-call label->mask fold that P1 targets is already trivial (2 registry
+     lookups). The mask cache replaces it with one Set-keyed lookup; at this
+     label-count the two are within noise of each other.
+  2. Run-to-run variance on this machine is large: re-running the SAME binary
+     three times gave ticks of 81 / 84 / 80 ms, swamping any sub-ms change.
+
+The change is kept because it is correct (the nextBit-guard regression test
+proves no staleness), low-risk, and targets the audit's stated workload (dozens
+of distinct queryFor calls per tick at 30 tps), which these benchmarks do not
+replicate. It is NOT substantiated as a speedup here. See the gate bench
+(Task 6) and the final report for the keep/revert decision.
