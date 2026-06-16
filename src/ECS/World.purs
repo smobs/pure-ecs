@@ -242,6 +242,13 @@ spawnEntityPure world =
     -- Step 1: Create EntityId (see CLAUDE.md State monad pattern)
     (Tuple entityId state) = runState createEntity world.entities
 
+    -- S5 fix: creating the empty archetype is a structural change. If it's
+    -- absent (fresh world / first spawn), the bump invalidates query caches
+    -- built before any archetype existed. After the first spawn the empty
+    -- archetype persists (despawn never deletes it), so this is a one-time
+    -- cost, not a per-spawn cost.
+    isNewArchetype = not (Map.member emptyArchetypeId world.archetypes)
+
     -- Step 2: Get or create empty archetype
     emptyArch = getOrCreateEmptyArchetype world.archetypes
 
@@ -256,12 +263,17 @@ spawnEntityPure world =
     -- Step 4: Update entity locations
     updatedLocations = Map.insert (entityIndex entityId) emptyArchetypeId world.entityLocations
 
-    -- Step 5: Build updated world
-    newWorld = world
+    -- Step 5: Build updated world (bump structuralVersion iff we just created
+    -- the empty archetype)
+    baseWorld = world
       { entities = state
       , archetypes = updatedArchetypes
       , entityLocations = updatedLocations
       }
+    newWorld =
+      if isNewArchetype
+        then incrementStructuralVersion baseWorld
+        else baseWorld
   in
     { world: newWorld, entity: Entity entityId }
 

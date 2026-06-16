@@ -604,6 +604,22 @@ querySpec = do
         length r1.results `shouldEqual` 0
         length r2.results `shouldEqual` 1
 
+      it "cached empty-row query is not stale after the first spawn (S5)" do
+        -- spawnEntityPure creates the empty archetype on the first spawn. If
+        -- it omits the structuralVersion bump, a query cached against a world
+        -- with zero archetypes stays valid and misses the spawned entity.
+        let q :: _ () ()
+            q = query (Proxy :: _ ())
+            -- Cache the empty-row query against a world with NO archetypes.
+            r1 = runQueryCached q emptyWorld
+            -- First spawn creates the empty archetype (the only absent->present
+            -- transition that previously skipped the version bump).
+            w1 = (spawnEntityPure r1.world).world
+            -- Second call must see the spawned entity, not a stale [].
+            r2 = runQueryCached q w1
+        length r1.results `shouldEqual` 0
+        length r2.results `shouldEqual` 1
+
     -- Edge Cases
     describe "Edge Cases" do
 
