@@ -1,0 +1,32 @@
+Win B gate — does per-entity record materialization warrant a column-iteration API?
+
+Method: readHeavyTick1k queries a 3-field record (position, velocity, health)
+but uses only 2; fullTick1k (movement) queries a 2-field record and does the
+same write. The two run back-to-back in one process, so the WITHIN-RUN delta
+isolates the cost of materializing the unused third field — Win B's target —
+and cancels this machine's large run-to-run noise.
+
+Measured (5 runs, ms; built fresh via `purs-backend-es build`, run on output-es):
+  run   movement(2f)   wide-query(3f)   delta
+   1        53             58            +9%
+   2        60             64            +7%
+   3        59             66            +12%
+   4        64             64             0%
+   5        62             62             0%
+  ~avg     ~60            ~63            ~+5%
+
+Decision rule (from the plan):
+  > ~20% slower -> Win B justified.
+  < ~10%        -> do NOT implement Win B (the new API surface would be debt).
+
+DECISION: Win B is NOT triggered. The extra field's materialization is ~5% of
+the tick (≈0.3-0.4 ms per tick over 1000 entities), near the noise floor — not
+a material fraction. The dominant tick cost is elsewhere (the modifyComponent_
+writes + query iteration), not the record build. Adding a second query entry
+point (forEachRow) for a ~5% slice would be permanent API/doc/ECS.Docs debt for
+no measured win — exactly the outcome the 2026-04-29 plan's gate ("worth doing
+IF benchmarks still show GC pressure") was meant to catch.
+
+Task 8 (Win B): NOT triggered. S1 is already closed independently (Task 5), so
+nothing depends on Win B. Revisit only if a future profile shows record-alloc /
+GC dominating a read-heavy loop at larger scale.
