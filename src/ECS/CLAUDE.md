@@ -80,6 +80,10 @@ entity <- spawnEntity
 - `query (Proxy :: _ (position :: Position, velocity :: Velocity))` → typed results
 - Exclusion filters with `without`
 - RowToList for generic component iteration
+- **Mask-resolution cache:** `runQueryCached` memoises each query's label-set →
+  bitmask resolution on `world.maskCache`, guarded by the registry's `nextBit`,
+  so a cache hit no longer re-folds the label set per call
+  (`ECS.World.resolveQueryMasks`).
 
 **Key functions**: `query`, `runQuery`, `without`, `forQuery`, `mapQuery`
 
@@ -167,6 +171,9 @@ See `docs/example-pipeline.md` for a real generated doc.
 - Entity version validation
 - Archetype existence
 - Component storage bounds
+- `readColumnAt` crashes loud (`unsafeCrashWith`) on a missing column or
+  out-of-range row — an internal-invariant break surfaces as a located
+  failure, not silent wrong data.
 
 ### 3. Zero-Cost Abstractions
 - Row types erased at runtime
@@ -429,9 +436,16 @@ main = do
 
 ---
 
-**Last Updated**: 2026-05-01 (Pipeline & Docs)
-**Version**: 3.3.0
+**Last Updated**: 2026-06-16 (Profiler-audit follow-up: mask cache, S5/S1 fixes)
+**Version**: 3.4.0
 **Status**: Production Ready ✅
+
+> **3.3 → 3.4 (backward-compatible):** `World` gained a `maskCache` field
+> (mask-resolution cache). Invisible if you use `emptyWorld` + the public API;
+> only hand-constructed `World` literals need `maskCache: Map.empty`. Also: the
+> first `spawnEntity` now bumps `structuralVersion` (S5 fix), and `readColumnAt`
+> crashes loud on invariant break (S1 fix). See the root `CLAUDE.md` migration
+> note for details.
 
 ## Migration to 3.1.0
 

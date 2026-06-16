@@ -604,6 +604,39 @@ querySpec = do
         length r1.results `shouldEqual` 0
         length r2.results `shouldEqual` 1
 
+      it "cached empty-row query is not stale after the first spawn (S5)" do
+        -- spawnEntityPure creates the empty archetype on the first spawn. If
+        -- it omits the structuralVersion bump, a query cached against a world
+        -- with zero archetypes stays valid and misses the spawned entity.
+        let q :: _ () ()
+            q = query (Proxy :: _ ())
+            -- Cache the empty-row query against a world with NO archetypes.
+            r1 = runQueryCached q emptyWorld
+            -- First spawn creates the empty archetype (the only absent->present
+            -- transition that previously skipped the version bump).
+            w1 = (spawnEntityPure r1.world).world
+            -- Second call must see the spawned entity, not a stale [].
+            r2 = runQueryCached q w1
+        length r1.results `shouldEqual` 0
+        length r2.results `shouldEqual` 1
+
+      it "mask-resolution cache re-resolves when a new component registers (Win A)" do
+        -- runQueryCached memoises label->mask resolution, guarded by the
+        -- registry's nextBit. A query for an unregistered label resolves to
+        -- Nothing (empty results) and caches that. After the label registers
+        -- (nextBit grows), the SAME query must re-resolve and find the entity.
+        let q :: _ (mana :: Int) ()
+            q = query (Proxy :: _ (mana :: Int))
+            -- First call: 'mana' unregistered -> Nothing -> [] (caches the
+            -- resolution at the current nextBit).
+            r1 = runQueryCached q emptyWorld
+            -- Spawn an entity carrying 'mana' (registers it, grows nextBit).
+            w1 = execState (void $ spawnEntity <+> (Proxy :: _ "mana") := 5) r1.world
+            -- Second call must re-resolve and see the entity.
+            r2 = runQueryCached q w1
+        length r1.results `shouldEqual` 0
+        length r2.results `shouldEqual` 1
+
     -- Edge Cases
     describe "Edge Cases" do
 

@@ -3,6 +3,7 @@ module Bench.ECS.Bench
   , spawn1k
   , queryAll1k
   , fullTick1k
+  , readHeavyTick1k
   ) where
 
 import Prelude
@@ -69,3 +70,29 @@ fullTick1k =
   where
     tickN 0 w = w
     tickN k w = tickN (k - 1) (runSystem movementSystem w).world
+
+-- | Queries a 3-field record (position, velocity, health) but writes only
+-- | position from velocity -- the health field is materialized into every
+-- | result record and never read. The wall-clock delta vs fullTick1k (which
+-- | queries a 2-field record) isolates the per-entity record-materialization
+-- | cost that Win B targets.
+wideMovementSystem :: System ( position :: Position, velocity :: Velocity, health :: Health )
+                              ( position :: Position )
+                              Unit
+wideMovementSystem = do
+  rs <- queryFor @( position :: Position, velocity :: Velocity, health :: Health )
+  for_ rs \r ->
+    modifyComponent_ (Proxy :: _ "position")
+      (\p -> { x: p.x + r.components.velocity.x
+             , y: p.y + r.components.velocity.y })
+      r.entity
+
+readHeavyTick1k :: Scenario
+readHeavyTick1k =
+  { name: "10 wide-query ticks (pos,vel,health; uses 2) over 1000 entities"
+  , build: buildWorld 1000
+  , run: \w -> tickN 10 w
+  }
+  where
+    tickN 0 w = w
+    tickN k w = tickN (k - 1) (runSystem wideMovementSystem w).world

@@ -1,0 +1,5 @@
+Final bench (post Win A + S5 + S1), fresh output-es:
+spawn 1000 entities (3 components each): 35 ms (avg of 5, sink=4)
+query+update (pos, vel) over 1000 entities: 7 ms (avg of 5, sink=4)
+10 movement ticks over 1000 entities: 59 ms (avg of 5, sink=4)
+10 wide-query ticks (pos,vel,health; uses 2) over 1000 entities: 61 ms (avg of 5, sink=4)

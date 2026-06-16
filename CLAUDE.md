@@ -78,6 +78,10 @@ entity <- spawnEntity
 - `query (Proxy :: _ (position :: Position, velocity :: Velocity))` → typed results
 - Exclusion filters with `without`
 - RowToList for generic component iteration
+- **Mask-resolution cache:** `runQueryCached` memoises each query's label-set →
+  bitmask resolution on `world.maskCache`, guarded by the registry's `nextBit`,
+  so a cache hit no longer re-folds the label set per call
+  (`ECS.World.resolveQueryMasks`).
 
 **Key functions**: `query`, `runQuery`, `without`, `forQuery`, `mapQuery`
 
@@ -199,6 +203,9 @@ See `docs/example-pipeline.md` for a real generated doc.
 - Entity version validation
 - Archetype existence
 - Component storage bounds
+- `readColumnAt` crashes loud (`unsafeCrashWith`) on a missing column or
+  out-of-range row — an internal-invariant break surfaces as a located
+  failure, not silent wrong data.
 
 ### 3. Zero-Cost Abstractions
 - Row types erased at runtime
@@ -535,9 +542,40 @@ main = do
 
 ---
 
-**Last Updated**: 2026-05-13 (Pipeline & Docs + AGENTS.md sync)
-**Version**: 3.3.0
+**Last Updated**: 2026-06-16 (Profiler-audit follow-up: mask cache, S5/S1 fixes)
+**Version**: 3.4.0
 **Status**: Production Ready ✅
+
+## Migration from 3.3 to 3.4
+
+**Backward-compatible.** Implements the corrected recommendations from the
+2026-06-16 profiler audit review. No public function signature changed —
+`spawnEntity`, `addComponent`, `query`/`queryFor`, `runSystem`,
+`updateComponent`/`modifyComponent`, etc. are all identical. Most consumers
+need **no changes**.
+
+The only thing to know:
+
+- **`World` gained a `maskCache` field** (the mask-resolution cache). This is
+  invisible if you use `emptyWorld` and the public API (record *update*, field
+  access, and `{a, b} ->` patterns are all unaffected). Only code that
+  **constructs a `World` record by hand** needs to add `maskCache: Map.empty`
+  — prefer `emptyWorld`.
+
+Also in this release (no action needed):
+
+- **S5 fix:** the first `spawnEntity` now bumps `structuralVersion` (it creates
+  the empty archetype). This closes a stale-cache bug for queries cached before
+  the first spawn. Only matters if you asserted exact `structuralVersion` values.
+- **S1 fix:** `readColumnAt` now `unsafeCrashWith`s on a (previously unreachable)
+  invariant break instead of fabricating a value — strictly safer; correct usage
+  never reaches it.
+- New additive exports: `resolveQueryMasks`, `MaskCacheKey`, `MaskCacheEntry`.
+- `partial` is now a declared direct dependency.
+
+See `docs/superpowers/plans/2026-06-16-profiler-audit-followup.md` and the
+addendum in `PROFILER_AUDIT_2026-06-16.md`. Note Win B (column-iteration query
+API) was **gated and not built** — its bench gate measured ~5%, below the bar.
 
 ## Migration from 3.2 to 3.3
 

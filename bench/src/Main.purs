@@ -2,7 +2,7 @@ module Bench.Main where
 
 import Prelude
 
-import Bench.ECS.Bench (Scenario, spawn1k, queryAll1k, fullTick1k)
+import Bench.ECS.Bench (Scenario, spawn1k, queryAll1k, fullTick1k, readHeavyTick1k)
 import Data.Array (range)
 import Data.DateTime.Instant (unInstant)
 import Data.Foldable (for_)
@@ -14,7 +14,7 @@ import Effect.Now (now)
 import Effect.Ref as Ref
 
 scenarios :: Array Scenario
-scenarios = [ spawn1k, queryAll1k, fullTick1k ]
+scenarios = [ spawn1k, queryAll1k, fullTick1k, readHeavyTick1k ]
 
 iterations :: Int
 iterations = 5

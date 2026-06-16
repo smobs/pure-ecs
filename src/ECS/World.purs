@@ -18,6 +18,8 @@ module ECS.World
   , ComponentRegistry
   , QueryCacheKey
   , CachedQueryResult
+  , MaskCacheKey
+  , MaskCacheEntry
   , emptyWorld
   , spawnEntity
   , despawnEntity
@@ -38,6 +40,7 @@ module ECS.World
   -- Query cache helpers
   , makeQueryCacheKey
   , incrementStructuralVersion
+  , resolveQueryMasks
   -- Pure versions (for internal use)
   , spawnEntityPure
   , despawnEntityPure
@@ -48,7 +51,7 @@ import Prelude
 import Control.Monad.State (State, runState, state)
 import Data.Array (index, length, take, updateAt)
 import Data.Array as Array
-import Data.Foldable (sum)
+import Data.Foldable (foldl, sum)
 import Data.Int.Bits (complement, shl, zshr, (.&.), (.|.))
 import Data.Map (Map)
 import Data.Map as Map
@@ -123,6 +126,24 @@ type CachedQueryResult =
   , version :: Int
   }
 
+-- | Key for the mask-resolution cache: the query's (required, excluded)
+-- | label sets. These are what's available *before* resolving masks, so
+-- | the cache can be consulted without paying the per-label registry folds.
+type MaskCacheKey = Tuple (Set String) (Set String)
+
+-- | A memoised label-set -> bitmask resolution.
+-- |
+-- | `required` is `Nothing` when some required label was unregistered at
+-- | resolution time. `nextBit` records the registry size when this entry was
+-- | computed: a label's bit never changes once assigned and the registry only
+-- | grows, so the entry is valid iff `nextBit` still equals the registry's
+-- | current `nextBit`.
+type MaskCacheEntry =
+  { required :: Maybe ComponentMask
+  , excluded :: ComponentMask
+  , nextBit  :: Int
+  }
+
 -- | World contains all ECS state.
 -- |
 -- | Structure:
@@ -139,6 +160,7 @@ type World =
   , componentRegistry :: ComponentRegistry
   , structuralVersion :: Int
   , queryCache :: Map QueryCacheKey CachedQueryResult
+  , maskCache :: Map MaskCacheKey MaskCacheEntry
   }
 
 -- | Entity handle with phantom row type.
@@ -207,6 +229,7 @@ emptyWorld =
   , componentRegistry: { labelToBit: Map.empty, nextBit: 0 }
   , structuralVersion: 0
   , queryCache: Map.empty
+  , maskCache: Map.empty
   }
 
 -- | Spawn a new entity (monadic version).
@@ -242,6 +265,13 @@ spawnEntityPure world =
     -- Step 1: Create EntityId (see CLAUDE.md State monad pattern)
     (Tuple entityId state) = runState createEntity world.entities
 
+    -- S5 fix: creating the empty archetype is a structural change. If it's
+    -- absent (fresh world / first spawn), the bump invalidates query caches
+    -- built before any archetype existed. After the first spawn the empty
+    -- archetype persists (despawn never deletes it), so this is a one-time
+    -- cost, not a per-spawn cost.
+    isNewArchetype = not (Map.member emptyArchetypeId world.archetypes)
+
     -- Step 2: Get or create empty archetype
     emptyArch = getOrCreateEmptyArchetype world.archetypes
 
@@ -256,12 +286,17 @@ spawnEntityPure world =
     -- Step 4: Update entity locations
     updatedLocations = Map.insert (entityIndex entityId) emptyArchetypeId world.entityLocations
 
-    -- Step 5: Build updated world
-    newWorld = world
+    -- Step 5: Build updated world (bump structuralVersion iff we just created
+    -- the empty archetype)
+    baseWorld = world
       { entities = state
       , archetypes = updatedArchetypes
       , entityLocations = updatedLocations
       }
+    newWorld =
+      if isNewArchetype
+        then incrementStructuralVersion baseWorld
+        else baseWorld
   in
     { world: newWorld, entity: Entity entityId }
 
@@ -543,6 +578,56 @@ trimTrailingZeros ws =
 -- | Tuple keys avoid string allocation on every cache lookup.
 makeQueryCacheKey :: ComponentMask -> ComponentMask -> QueryCacheKey
 makeQueryCacheKey requiredMask excludedMask = Tuple requiredMask excludedMask
+
+-- | Resolve a query's required/excluded label sets to bitmasks, memoised on
+-- | `world.maskCache`. A cache hit avoids re-folding both label sets against
+-- | the registry on every query call (the P1 cost). The entry is valid as
+-- | long as the registry's `nextBit` is unchanged — a label's bit never
+-- | changes once assigned, and only registry growth can flip a strict
+-- | resolution from `Nothing` to `Just`.
+-- |
+-- | Returns the (possibly cache-updated) world so callers that thread the
+-- | world (`runQueryCached`) keep the populated cache; callers that don't
+-- | (`runQuery`) may discard `world`.
+resolveQueryMasks
+  :: Set String -> Set String -> World
+  -> { required :: Maybe ComponentMask, excluded :: ComponentMask, world :: World }
+resolveQueryMasks requiredLabels excludedLabels world =
+  let
+    key = Tuple requiredLabels excludedLabels
+    currentNextBit = world.componentRegistry.nextBit
+  in
+    case Map.lookup key world.maskCache of
+      Just cached | cached.nextBit == currentNextBit ->
+        { required: cached.required, excluded: cached.excluded, world }
+      _ ->
+        let
+          required = strictMask requiredLabels
+          excluded = lenientMask excludedLabels
+          entry = { required, excluded, nextBit: currentNextBit }
+          newCache = Map.insert key entry world.maskCache
+        in
+          { required, excluded, world: world { maskCache = newCache } }
+  where
+    -- Strict: returns Nothing if any label is unregistered (no matches possible).
+    strictMask labels =
+      foldl
+        (\maybeAcc label -> case maybeAcc of
+            Nothing -> Nothing
+            Just acc -> case Map.lookup label world.componentRegistry.labelToBit of
+              Just bit -> Just (maskAddBit acc bit)
+              Nothing -> Nothing)
+        (Just emptyMask)
+        labels
+
+    -- Lenient: unregistered labels are ignored (missing exclusion = no exclusion).
+    lenientMask labels =
+      foldl
+        (\mask label -> case Map.lookup label world.componentRegistry.labelToBit of
+            Just bit -> maskAddBit mask bit
+            Nothing -> mask)
+        emptyMask
+        labels
 
 -- | Increment the structural version (invalidates query cache).
 -- |
