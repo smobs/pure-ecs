@@ -38,7 +38,7 @@ import ECS.Internal.ComponentStorage as CS
 import Prim.Row (class Cons, class Lacks)
 import Prim.RowList (class RowToList, RowList)
 import Prim.RowList as RL
-import Record as Record
+import Record.Unsafe (unsafeSet)
 import Type.Proxy (Proxy(..))
 import Type.Data.Symbol (class IsSymbol, reflectSymbol)
 
@@ -309,7 +309,11 @@ instance readComponentsCons ::
       componentValue = readColumnAt labelStr arch rowIdx
       rest           = readComponents (Proxy :: Proxy tail) arch rowIdx
     in
-      Record.insert (Proxy :: Proxy label) componentValue rest
+      -- Reuse labelStr instead of Record.insert, which would reflect the
+      -- symbol a second time. The Cons/Lacks constraints on this instance
+      -- prove `label` is absent from `rest` and that r = r' + label, which is
+      -- exactly the safety obligation Record.insert discharges internally.
+      unsafeSet labelStr componentValue rest
 
 -- | Read one component value from a resolved archetype at a known row index.
 -- |

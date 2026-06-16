@@ -1,0 +1,10 @@
+
+spawn 1000 entities (3 components each): 52 ms (avg of 5, sink=4)
+query+update (pos, vel) over 1000 entities: 10 ms (avg of 5, sink=4)
+10 movement ticks over 1000 entities: 76 ms (avg of 5, sink=4)
+
+Win A part 2 — single reflectSymbol per component via unsafeSet.
+Behaviour-identical (all 188 tests pass). Removes one reflectSymbol per
+(entity, component) in result extraction. As with part 1, the delta is below
+this machine's run-to-run noise floor for these 2-label scenarios; kept as a
+correct, no-regression micro-opt, not a substantiated speedup here.
