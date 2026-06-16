@@ -436,9 +436,16 @@ main = do
 
 ---
 
-**Last Updated**: 2026-05-01 (Pipeline & Docs)
-**Version**: 3.3.0
+**Last Updated**: 2026-06-16 (Profiler-audit follow-up: mask cache, S5/S1 fixes)
+**Version**: 3.4.0
 **Status**: Production Ready ✅
+
+> **3.3 → 3.4 (backward-compatible):** `World` gained a `maskCache` field
+> (mask-resolution cache). Invisible if you use `emptyWorld` + the public API;
+> only hand-constructed `World` literals need `maskCache: Map.empty`. Also: the
+> first `spawnEntity` now bumps `structuralVersion` (S5 fix), and `readColumnAt`
+> crashes loud on invariant break (S1 fix). See the root `CLAUDE.md` migration
+> note for details.
 
 ## Migration to 3.1.0
 
