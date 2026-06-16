@@ -4,6 +4,8 @@ output-es/
 .spago/
 .spago-work/
 generated-docs/
+.psci_modules/
+.purs-repl
 
 # Benchmark artifacts
 bench/bench-out.mjs
@@ -12,6 +14,9 @@ bench/bench-out.mjs
 node_modules/
 npm-debug.log
 yarn-error.log
+
+# Local agent/tooling config
+.claude/
 
 # IDEs
 .vscode/
