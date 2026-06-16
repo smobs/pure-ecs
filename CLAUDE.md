@@ -78,6 +78,10 @@ entity <- spawnEntity
 - `query (Proxy :: _ (position :: Position, velocity :: Velocity))` → typed results
 - Exclusion filters with `without`
 - RowToList for generic component iteration
+- **Mask-resolution cache:** `runQueryCached` memoises each query's label-set →
+  bitmask resolution on `world.maskCache`, guarded by the registry's `nextBit`,
+  so a cache hit no longer re-folds the label set per call
+  (`ECS.World.resolveQueryMasks`).
 
 **Key functions**: `query`, `runQuery`, `without`, `forQuery`, `mapQuery`
 
@@ -199,6 +203,9 @@ See `docs/example-pipeline.md` for a real generated doc.
 - Entity version validation
 - Archetype existence
 - Component storage bounds
+- `readColumnAt` crashes loud (`unsafeCrashWith`) on a missing column or
+  out-of-range row — an internal-invariant break surfaces as a located
+  failure, not silent wrong data.
 
 ### 3. Zero-Cost Abstractions
 - Row types erased at runtime

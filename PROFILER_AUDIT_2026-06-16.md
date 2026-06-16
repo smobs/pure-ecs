@@ -266,3 +266,44 @@ consumer-side discipline avoids it while using `runQuery*`.
 
 *Audit performed against repo HEAD `3c6fbff`; cross-referenced with `PERFORMANCE_PLAN.md`
 (its §1.1 bitmask work is already landed) and `tickets/01`.*
+
+---
+
+## Addendum — review + implementation outcome (2026-06-16)
+
+A five-agent review (PureScript mechanics, architecture, FP safety, citation
+fact-check, repo state) confirmed this audit is accurate — 16/16 cited
+locations land, 0 wrong — and made corrections that are now implemented on
+branch `perf/profiler-audit-followup` per
+`docs/superpowers/plans/2026-06-16-profiler-audit-followup.md`:
+
+1. **Win A option "cache masks on the `Query` value" is a no-op** — `Query` is
+   rebuilt fresh on every `queryFor @row` call, so nothing cached on it
+   survives. Implemented only the `World`-level mask-resolution cache
+   (`ECS.World.resolveQueryMasks`, guarded by registry `nextBit`).
+   *Honest non-result:* it shows **no measurable delta** on the repo
+   benchmarks — their queries use 2 labels (the fold is already trivial) and
+   machine noise dominates. Kept as a correct, no-regression change targeting
+   the audit's many-queries-per-tick consumer, **not** a substantiated speedup.
+
+2. **The P1/P2/P3 percentages are ordinal, not additive** — they nearly sum to
+   100% of the 6.6% slice and came from one unreproduced profile. Read as
+   "P1 and P2 dominate," not as bankable numbers.
+
+3. **Win B is the 2026-04-29 plan's deferred streaming-query item, and was
+   gated, not scheduled.** A read-heavy wide-query bench (added as the gate)
+   measured the per-entity record materialization Win B targets at **~5%** of a
+   tick — below the ~20% bar — so **Win B was NOT built**. A second query API
+   would have been pure debt. (See `bench-gate-winB.txt`.)
+
+Additional outcomes:
+- **S5 (not in this audit):** `spawnEntityPure` omitted the `structuralVersion`
+  bump on first empty-archetype creation, staling a query cached before the
+  first spawn. **Fixed** (with a regression test).
+- **S1 fix decoupled from Win B** and closed cheaply: `readColumnAt` now
+  `unsafeCrashWith`s on its (unreachable) invariant-break arms instead of
+  fabricating `unsafeCoerce unit`, turning silent corruption into a loud,
+  located failure.
+- **P3 (per-signature cache invalidation)** remains gated on workload knowledge
+  (spawn-heavy, novel-archetype sessions); to be expanded into its own plan
+  when triggered.
